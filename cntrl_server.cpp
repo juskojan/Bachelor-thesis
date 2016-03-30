@@ -48,7 +48,6 @@ CNTR::CNTR(int argc, _TCHAR* argv[]){
 	fileInput.open("C:\\Users\\Jusko\\Desktop\\tests.txt");
 	if (fileInput.is_open()) {
 		while (getline(fileInput, line)) {
-			getline(fileInput, line);
 			if ((offset = line.find((this->TestID).c_str(), 0)) != std::string::npos) {
 				this->TestPath = line.substr(line.find(delimiter) + 1, line.length()); 
 			}
@@ -70,22 +69,39 @@ void CNTR::GetError(int errnum){
 
 }
 
-
-int CNTR::Parse_response(std::string response){
-	//FIRST STRING
+/*
+	RESPONSES TO CLIENT
+	- method called with arguments of string received from client and socket of client
+	- parses the string and responds accordingly
+	- if the received string is wrong/wrong seqnum/... returns with error code
+*/
+int CNTR::Parse_response(std::string response, SOCKET sock){
+	
+	//FIRST STRING that is supposed to be received
 	if ((strcmp((response.substr(0, response.find('.'))).c_str(), "1") == 0)){
 		if ((strcmp((response.substr(response.find('.') + 1, response.find(':') - 2)).c_str(), this->TestID.c_str()) == 0)){
 			if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "INIT") == 0)){
 				std::cout << ">>> Test no. " << this->TestID << " initialized in browser " << this->Browser << ".\n";
 				this->TestState = 2;
+				// now respond
+				int retval = send(sock, "1.ACK", sizeof("1.ACK"), 0);
+				if (retval == SOCKET_ERROR)
+				{
+					fprintf(stderr, "Server: send() failed: error %d\n", WSAGetLastError());
+				}
+				else
+					printf("Server: send() is OK.\n");
+				// INIT OK
 				return 2;
 			}
 			else{
+				//wrong keyword
 				this->TestState = 98;
 				return 98;
 			}
 		}
 		else{
+			//wrong test ID
 			this->TestState = 98;
 			return 98;
 		}
@@ -95,27 +111,83 @@ int CNTR::Parse_response(std::string response){
 		if ((strcmp((response.substr(response.find('.') + 1, response.find(':') - 2)).c_str(), this->TestID.c_str()) == 0)){
 			if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "SUCCESS") == 0)){
 				std::cout << ">>> Test no. " << this->TestID << " is successful" << ".\n";
+
+				int retval = send(sock, "2.ACK", sizeof("2.ACK"), 0);
+				if (retval == SOCKET_ERROR)
+				{
+					fprintf(stderr, "Server: send() failed: error %d\n", WSAGetLastError());
+				}
+				else
+					printf("Server: send() is OK.\n");
+
 				this->TestState = 3;
 				return 3;
 				//TerminateProcess(this->h, 0);
 			}
 			else if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "FAILURE") == 0)){
 				std::cout << ">>> Test no. " << this->TestID << " has been prevented" << ".\n";
+
+				int retval = send(sock, "2.ACK", sizeof("2.ACK"), 0);
+				if (retval == SOCKET_ERROR)
+				{
+					fprintf(stderr, "Server: send() failed: error %d\n", WSAGetLastError());
+				}
+				else
+					printf("Server: send() is OK.\n");
+
 				this->TestState = 97;
 				return 97;
 			}
 			else{
+				//wrong keyword
 				this->TestState = 97;
 				return 97;
 			}
 		}
 		else{
+			//wrong test id
 			this->TestState = 97;
 			return 97;
 		}
 	}
+	// THIRD STRING
+	if ((strcmp((response.substr(0, response.find('.'))).c_str(), "3") == 0)){
+		if ((strcmp((response.substr(response.find('.') + 1, response.find(':') - 2)).c_str(), this->TestID.c_str()) == 0)){
+			if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "END") == 0)){
+				std::cout << ">>> Test no. " << this->TestID << " finished" << ".\n";
+
+				int retval = send(sock, "3.ACK", sizeof("3.ACK"), 0);
+				if (retval == SOCKET_ERROR)
+				{
+					fprintf(stderr, "Server: send() failed: error %d\n", WSAGetLastError());
+				}
+				else
+					printf("Server: send() is OK.\n");
+
+				this->TestState = 4;
+				
+				return 4;
+				
+			}
+			else{
+				//wrong keyword
+				this->TestState = 96;
+				return 96;
+			}
+		}
+		else{
+			//wrong ID
+			this->TestState = 96;
+			return 96;
+		}
+	}
 	
-	return 0;
+	if (atoi((response.substr(0, response.find('.'))).c_str()) > 3){
+		this->TestState = 95;
+		return 95;
+	}
+
+	return 94;
 }
 
 /*
@@ -205,7 +277,7 @@ int CNTR::Launch_Server() {
 		printf("Server: listen() is OK.\n");
 
 	std::string received;
-
+	
 	// LOOP
 	while (1)
 	{
@@ -220,6 +292,7 @@ int CNTR::Launch_Server() {
 		else
 			printf("Server: accept() is OK.\n");
 		printf("Server: accepted connection from %s \n", inet_ntoa(from.sin_addr));
+		
 		/*
 		WSAOVERLAPPED ol;
 		ol.hEvent = CreateEvent(...);
@@ -234,11 +307,11 @@ int CNTR::Launch_Server() {
 		/// recv event
 		}
 		*/
-
+		
 		// In the case of SOCK_STREAM, the server can do recv() and send() on
 		// the accepted socket and then close it.
 		retval = recv(msgsock, Buffer, 128, 0);
-		SetConsoleCtrlHandler(console_ctrl)
+		
 		if (retval == SOCKET_ERROR)
 		{
 			fprintf(stderr, "Server: recv() failed: error %d\n", WSAGetLastError());
@@ -260,62 +333,25 @@ int CNTR::Launch_Server() {
 
 		received = std::string(Buffer);
 
-		int ret = CNTR::Parse_response(received);
-
-		if (ret == 2){
-			retval = send(msgsock, "ACK:INIT", sizeof("ACK:INIT"), 0);
-
-			if (retval == SOCKET_ERROR)
-			{
-				fprintf(stderr, "Server: send() failed: error %d\n", WSAGetLastError());
-			}
-			else
-				printf("Server: send() is OK.\n");
-		}
-		else if (ret == 3){
-			retval = send(msgsock, "END", sizeof("END"), 0);
-
-			if (retval == SOCKET_ERROR)
-			{
-				fprintf(stderr, "Server: send() failed: error %d\n", WSAGetLastError());
-			}
-			else
-				printf("Server: send() is OK.\n");
-
-			closesocket(msgsock);
-			return 0;
-		}
-		else if (ret == 97 || ret == 98){
-			retval = send(msgsock, "", 0, 0);
-
-			if (retval == SOCKET_ERROR)
-			{
-				fprintf(stderr, "Server: send() failed: error %d\n", WSAGetLastError());
-			}
-			else
-				printf("Server: send() is OK.\n");
-
-			closesocket(msgsock);
-			return 0;
-		}
-	
+		int ret = CNTR::Parse_response(received, msgsock);
 		
-		//back
-		/*
-		retval = send(msgsock, Buffer, sizeof(Buffer), 0);
-
-		if (retval == SOCKET_ERROR)
-		{
-			fprintf(stderr, "Server: send() failed: error %d\n", WSAGetLastError());
+		if (ret == 4){
+			std::cout << "Communication successfully terminated.\n";
+			closesocket(msgsock);
+			WSACleanup();
+			//TerminateProcess(this->h, 0);
+			break;
 		}
-		else
-			printf("Server: send() is OK.\n");
-
-		printf("Server: I'm waiting more connection, try running the client\n");
-		*/
-		//closesocket(msgsock);
-
-		continue;
+		else if (ret == 2 || ret == 3){
+			continue;
+		}
+		else if (ret >= 94 && ret <= 98){
+			std::cout << "Communication terminated with error.\n";
+			closesocket(msgsock);
+			WSACleanup();
+			break;
+		}
+		
 	}
 	return 0;
 }
@@ -372,6 +408,10 @@ int CNTR::Propag_Port(std::string Port){
 	return 0;
 }
 
+/*
+	BROWSER LAUNCHER
+		- starts new instance of desired web browser with html file
+*/
 HANDLE CNTR::Launch_Browser(){
 	std::wstring tmp_str(this->TestPath.begin(), this->TestPath.end());
 	LPCWSTR PATH = tmp_str.c_str();
@@ -389,17 +429,18 @@ HANDLE CNTR::Launch_Browser(){
 	ExecuteInfo.cbSize = sizeof(ExecuteInfo);
 	ExecuteInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
 	ExecuteInfo.hwnd = 0;
-	ExecuteInfo.lpVerb = L"open";                      // Operation to perform
-	ExecuteInfo.lpFile = BROWSER;  // Application name
-	ExecuteInfo.lpParameters = PATH;           // Additional parameters
-	ExecuteInfo.lpDirectory = 0;                           // Default directory
+	ExecuteInfo.lpVerb = L"open";           // Operation to perform
+	ExecuteInfo.lpFile = BROWSER;			// Application name
+	ExecuteInfo.lpParameters = PATH;        // Additional parameters
+	ExecuteInfo.lpDirectory = 0;            // Default directory
 	ExecuteInfo.nShow = SW_SHOW;
 	ExecuteInfo.hInstApp = 0;
 
 	if (ShellExecuteEx(&ExecuteInfo) == FALSE){
-
+		this->TestState = 90;
+		return NULL;
 	}
-	
+
 	//std::cout << ExecuteInfo.hProcess;
 	//TerminateProcess(ExecuteInfo.hProcess, 0);
 	//TerminateProcess(ExecuteInfo.hProcess, 1);
@@ -411,6 +452,7 @@ HANDLE CNTR::Launch_Browser(){
 
 int _tmain(int argc, _TCHAR* argv[])
 {
+	
 	//get info from arg
 	CNTR heh(argc, argv);
 
@@ -424,6 +466,10 @@ int _tmain(int argc, _TCHAR* argv[])
 	heh.h = heh.Launch_Browser();
 	
 	t.join();
+
+	TerminateProcess(heh.h, 0);
+	
+	//DWORD id = GetCurrentProcessId();
 
 	return 4;
 }

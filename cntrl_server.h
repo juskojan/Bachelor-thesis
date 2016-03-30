@@ -33,7 +33,7 @@ class CNTR {
 		int Launch_Server();
 		int Propag_Port(std::string Port);
 		HANDLE Launch_Browser();
-		int Parse_response(std::string response);
+		int Parse_response(std::string response, SOCKET sock);
 		void GetError(int errnum);
 
 
