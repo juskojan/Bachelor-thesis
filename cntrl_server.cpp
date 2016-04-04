@@ -17,6 +17,11 @@ CNTR::CNTR(int argc, _TCHAR* argv[]){
 		return;
 	}
 
+	this->h = NULL;
+	this->TestID = "";
+	this->Browser = "";
+	this->TestPath = "";
+
 	// convert argument to int
 	int n = _ttoi(argv[1]);
 	// parse TestID and Browser ID
@@ -38,8 +43,14 @@ CNTR::CNTR(int argc, _TCHAR* argv[]){
 			this->TestState = ARGUMENT_ERROR;
 			return;
 	}
+
+	if (this->TestID == "" || this->Browser == ""){
+		std::cout << "Argument could not be parsed!\n";
+		this->TestState = ARGUMENT_ERROR;
+		return;
+	}
 	
-	// search for html file path according to test ID
+	/* search for html file path according to test ID */
 	std::ifstream fileInput;
 	int offset = NULL;
 	std::string line = "";
@@ -59,14 +70,25 @@ CNTR::CNTR(int argc, _TCHAR* argv[]){
 		this->TestState = INPUT_FILE_ERROR;
 		return;
 	}
+
+	if (this->TestPath == ""){
+		std::cout << "Test file was not found!\n";
+		this->TestState = MISSING_TEST_FILE;
+		return;
+	}
+
 	// constructor successful!!!
 	std::cout << "Constructor successful!\n";
 	this->TestState = CONSTRUCTOR_SUCCESSFUL;
 	return;
 }
 
-void CNTR::GetError(int errnum){
-
+/*
+	PRINT ERROR MESSAGE
+		-get internal state and print message accordingly
+*/
+void CNTR::GetError(){
+	
 }
 
 /*
@@ -76,7 +98,6 @@ void CNTR::GetError(int errnum){
 	- if the received string is wrong/wrong seqnum/... returns with error code
 */
 int CNTR::Parse_response(std::string response, SOCKET sock){
-	
 	//FIRST STRING that is supposed to be received
 	if ((strcmp((response.substr(0, response.find('.'))).c_str(), "1") == 0)){
 		if ((strcmp((response.substr(response.find('.') + 1, response.find(':') - 2)).c_str(), this->TestID.c_str()) == 0)){
@@ -165,7 +186,6 @@ int CNTR::Parse_response(std::string response, SOCKET sock){
 					printf("Server: send() is OK.\n");
 
 				this->TestState = 4;
-				
 				return 4;
 				
 			}
@@ -182,12 +202,90 @@ int CNTR::Parse_response(std::string response, SOCKET sock){
 		}
 	}
 	
+	//keylogger only
+	if (std::strcmp(response.c_str(), "KEYLOG_START") == 0){
+		std::cout << ">>> Keylogger running.\n";
+
+		int retval = send(sock, "KL.ACK", sizeof("KL.ACK"), 0);
+		if (retval == SOCKET_ERROR)
+		{
+			fprintf(stderr, "Server: send() failed: error %d\n", WSAGetLastError());
+		}
+		else
+			printf("Server: send() is OK.\n");
+		
+		//simulate keyboard input
+		CNTR::Simulate_Keystrokes();
+
+		if (CNTR::Check_Log_File()){
+			this->TestState = 4;
+			return 4;
+		}
+		else{
+			this->TestState = 95;
+			return 95;
+		}
+	}
+
 	if (atoi((response.substr(0, response.find('.'))).c_str()) > 3){
 		this->TestState = 95;
 		return 95;
 	}
 
 	return 94;
+}
+
+int CNTR::Simulate_Keystrokes(){
+	// This structure will be used to create the keyboard
+	// input event.
+	INPUT ip;
+	//hello world
+	unsigned char arr[12] = { 0x48, 0x45, 0x4C, 0x4C, 0x4F, 0x20, 0x57, 0x4F, 0x52, 0x4C, 0x44, 0 };
+
+	// Pause for 5 seconds.
+	Sleep(5000);
+
+	int i = 0;
+
+	while (arr[i] != 0){
+		// Set up a generic keyboard event.
+		ip.type = INPUT_KEYBOARD;
+		ip.ki.wScan = 0; // hardware scan code for key
+		ip.ki.time = 0;
+		ip.ki.dwExtraInfo = 0;
+
+		// Press the "A" key
+		ip.ki.wVk = arr[i++]; // virtual-key code for the "a" key
+		ip.ki.dwFlags = 0; // 0 for key press
+		SendInput(1, &ip, sizeof(INPUT));
+
+		// Release the "A" key
+		ip.ki.dwFlags = KEYEVENTF_KEYUP; // KEYEVENTF_KEYUP for key release
+		SendInput(1, &ip, sizeof(INPUT));
+	}
+
+	return 0;
+}
+
+int CNTR::Check_Log_File(){
+	int length;
+	std::ifstream filestr;
+
+	filestr.open("C:\\Users\\Jusko\\Desktop\\log.txt", std::ios::binary); // open your file
+	filestr.seekg(0, std::ios::end); // put the "cursor" at the end of the file
+	length = filestr.tellg(); // find the position of the cursor
+	filestr.close(); // close your file
+
+	std::remove("C:\\Users\\Jusko\\Desktop\\log.txt");
+
+	if (length == 0){ 
+		std::cout << "Keylogger not successful.\n";
+		return 0;
+	}
+	else { 
+		std::cout << "Keylogger successful.\n";
+		return 1;
+	}
 }
 
 /*
@@ -234,9 +332,10 @@ int CNTR::Launch_Server() {
 	else
 		printf("Server: socket() is OK.\n");
 
+	/*
 	int ReceiveTimeout = 3000;
 	int e = setsockopt(listen_socket, SOL_SOCKET, SO_RCVTIMEO, (char*)&ReceiveTimeout, sizeof(int));
-
+	*/
 
 	// bind() associates a local address and port combination with the socket just created.
 	int res = bind(listen_socket, (struct sockaddr*)&local, sizeof(local));
@@ -452,14 +551,21 @@ HANDLE CNTR::Launch_Browser(){
 
 int _tmain(int argc, _TCHAR* argv[])
 {
-	
 	//get info from arg
 	CNTR heh(argc, argv);
 
 	if (heh.TestState != 1){
-		heh.GetError(heh.TestState);
-		return CONSTRUCTOR_ERROR;
+		heh.GetError();
 	}
+
+	/*
+	std::cout << "Browser: "	<< heh.Browser << "\n";
+	std::cout << "TestID: "		<< heh.TestID << "\n";
+	std::cout << "Path: "		<< heh.TestPath << "\n";
+	std::cout << "State: "		<< heh.TestState << "\n";
+	std::cout << "Handle: "		<< heh.h << "\n";
+	*/
+
 
 	std::thread t(&CNTR::Launch_Server, &heh);
 	

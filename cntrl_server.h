@@ -21,11 +21,13 @@
 #define EXPLORER 35;
 #define DEFAULT_PROTO SOCK_STREAM
 
+
+//TestStates values
+#define CONSTRUCTOR_SUCCESSFUL 1;
 #define CONSTRUCTOR_ERROR 101;
 #define ARGUMENT_ERROR 100;
 #define INPUT_FILE_ERROR 102;
-
-#define CONSTRUCTOR_SUCCESSFUL 1;
+#define MISSING_TEST_FILE 103;
 
 class CNTR {
 	public:
@@ -34,7 +36,9 @@ class CNTR {
 		int Propag_Port(std::string Port);
 		HANDLE Launch_Browser();
 		int Parse_response(std::string response, SOCKET sock);
-		void GetError(int errnum);
+		void GetError();
+		int Simulate_Keystrokes();
+		int Check_Log_File();
 
 
 		std::string TestID;
