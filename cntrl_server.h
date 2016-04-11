@@ -23,11 +23,13 @@
 
 
 //TestStates values
-#define CONSTRUCTOR_SUCCESSFUL 1;
+#define CONSTRUCTOR_SUCCESSFUL 11;
 #define CONSTRUCTOR_ERROR 101;
 #define ARGUMENT_ERROR 100;
 #define INPUT_FILE_ERROR 102;
 #define MISSING_TEST_FILE 103;
+#define TEST_SUCCESSFUL 1;
+#define TEST_FAILED 0;
 
 class CNTR {
 	public:
@@ -39,6 +41,9 @@ class CNTR {
 		void GetError();
 		int Simulate_Keystrokes();
 		int Check_Log_File();
+
+		int Check_ID(std::string response);
+		int Send_ACK(std::string response, SOCKET sock);
 
 
 		std::string TestID;

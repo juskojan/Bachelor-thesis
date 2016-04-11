@@ -91,6 +91,29 @@ void CNTR::GetError(){
 	
 }
 
+int CNTR::Check_ID(std::string response){
+	if ((strcmp((response.substr(response.find('.') + 1, response.find(':') - 2)).c_str(), this->TestID.c_str()) == 0))
+		return 1;
+
+	return 0;
+}
+
+int CNTR::Send_ACK(std::string response, SOCKET sock){
+
+	std::string ack = response + "-ACK";
+
+	int retval = send(sock, ack.c_str(), sizeof(ack.c_str()), 0);
+	if (retval == SOCKET_ERROR)
+	{
+		fprintf(stderr, "Server: send() failed: error %d\n", WSAGetLastError());
+		return 0;
+	}
+	else
+		printf("Server: send() is OK.\n");
+	// ACK OK
+	return 1;
+}
+
 /*
 	RESPONSES TO CLIENT
 	- method called with arguments of string received from client and socket of client
@@ -98,169 +121,120 @@ void CNTR::GetError(){
 	- if the received string is wrong/wrong seqnum/... returns with error code
 */
 int CNTR::Parse_response(std::string response, SOCKET sock){
-	//FIRST STRING that is supposed to be received
+	// check if test ID is right
+	if (!CNTR::Check_ID(response)){
+		std::cout << "Wrong ID.\n";
+		this->TestState = 90;
+		return 90;
+	}
+
+	//FIRST STRING that is supposed to be received is always INIT
 	if ((strcmp((response.substr(0, response.find('.'))).c_str(), "1") == 0)){
-		if ((strcmp((response.substr(response.find('.') + 1, response.find(':') - 2)).c_str(), this->TestID.c_str()) == 0)){
-			if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "INIT") == 0)){
-				std::cout << ">>> Test no. " << this->TestID << " initialized in browser " << this->Browser << ".\n";
-				this->TestState = 2;
-				// now respond
-				int retval = send(sock, "1.ACK", sizeof("1.ACK"), 0);
-				if (retval == SOCKET_ERROR)
-				{
-					fprintf(stderr, "Server: send() failed: error %d\n", WSAGetLastError());
-				}
-				else
-					printf("Server: send() is OK.\n");
-				// INIT OK
-				return 2;
+		if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "INIT") == 0)){
+			std::cout << ">>> Test no. " << this->TestID << " initialized in browser " << this->Browser << ".\n";
+			// now respond
+			if (!CNTR::Send_ACK(response, sock)){
+				this->TestState = 91;
+				return 91;
 			}
-			else{
-				//wrong keyword
-				this->TestState = 98;
-				return 98;
-			}
+
+			this->TestState = 2;
+			return 2;
 		}
 		else{
-			//wrong test ID
-			this->TestState = 98;
-			return 98;
+			//wrong keyword
+			this->TestState = 90;
+			return 90;
 		}
 	}
-	// SECOND STRING
-	if ((strcmp((response.substr(0, response.find('.'))).c_str(), "2") == 0)){
-		if ((strcmp((response.substr(response.find('.') + 1, response.find(':') - 2)).c_str(), this->TestID.c_str()) == 0)){
-			if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "SUCCESS") == 0)){
-				std::cout << ">>> Test no. " << this->TestID << " is successful" << ".\n";
 
-				int retval = send(sock, "2.ACK", sizeof("2.ACK"), 0);
-				if (retval == SOCKET_ERROR)
-				{
-					fprintf(stderr, "Server: send() failed: error %d\n", WSAGetLastError());
-				}
-				else
-					printf("Server: send() is OK.\n");
+	// Success/failure
+	if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "SUCCESS") == 0)){
+		std::cout << ">>> Test no. " << this->TestID << " is successful" << ".\n";
 
-				this->TestState = 3;
-				return 3;
-				//TerminateProcess(this->h, 0);
-			}
-			else if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "FAILURE") == 0)){
-				std::cout << ">>> Test no. " << this->TestID << " has been prevented" << ".\n";
-
-				int retval = send(sock, "2.ACK", sizeof("2.ACK"), 0);
-				if (retval == SOCKET_ERROR)
-				{
-					fprintf(stderr, "Server: send() failed: error %d\n", WSAGetLastError());
-				}
-				else
-					printf("Server: send() is OK.\n");
-
-				this->TestState = 97;
-				return 97;
-			}
-			else{
-				//wrong keyword
-				this->TestState = 97;
-				return 97;
-			}
+		if (!CNTR::Send_ACK(response, sock)){
+			this->TestState = 91;
+			return 91;
 		}
-		else{
-			//wrong test id
-			this->TestState = 97;
-			return 97;
-		}
+
+		this->TestState = 1;
+		return 1;
 	}
-	// THIRD STRING
-	if ((strcmp((response.substr(0, response.find('.'))).c_str(), "3") == 0)){
-		if ((strcmp((response.substr(response.find('.') + 1, response.find(':') - 2)).c_str(), this->TestID.c_str()) == 0)){
-			if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "END") == 0)){
-				std::cout << ">>> Test no. " << this->TestID << " finished" << ".\n";
+	else if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "FAILURE") == 0)){
+		std::cout << ">>> Test no. " << this->TestID << " has been prevented" << ".\n";
 
-				int retval = send(sock, "3.ACK", sizeof("3.ACK"), 0);
-				if (retval == SOCKET_ERROR)
-				{
-					fprintf(stderr, "Server: send() failed: error %d\n", WSAGetLastError());
-				}
-				else
-					printf("Server: send() is OK.\n");
+		if (!CNTR::Send_ACK(response, sock)){
+			this->TestState = 91;
+			return 91;
+		}
 
-				this->TestState = 4;
-				return 4;
-				
-			}
-			else{
-				//wrong keyword
-				this->TestState = 96;
-				return 96;
-			}
-		}
-		else{
-			//wrong ID
-			this->TestState = 96;
-			return 96;
-		}
+		this->TestState = 0;
+		return 0;
 	}
-	
+	else if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "END") == 0)){
+		std::cout << ">>> Test no. " << this->TestID << " finished" << ".\n";
+
+		if (!CNTR::Send_ACK(response, sock)){
+			this->TestState = 91;
+			return 91;
+		}
+
+		Sleep(1000);
+
+		this->TestState = 4;
+		return 4;	
+	}
 	//keylogger only
-	if (std::strcmp(response.c_str(), "KEYLOG_START") == 0){
+	else if (strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "KEYLOG_START") == 0){
 		std::cout << ">>> Keylogger running.\n";
-
-		int retval = send(sock, "KL.ACK", sizeof("KL.ACK"), 0);
-		if (retval == SOCKET_ERROR)
-		{
-			fprintf(stderr, "Server: send() failed: error %d\n", WSAGetLastError());
+		//ack
+		if (!CNTR::Send_ACK(response, sock)){
+			this->TestState = 91;
+			return 91;
 		}
-		else
-			printf("Server: send() is OK.\n");
 		
 		//simulate keyboard input
 		CNTR::Simulate_Keystrokes();
 
+		//success?
 		if (CNTR::Check_Log_File()){
-			this->TestState = 4;
-			return 4;
+			this->TestState = 1;
+			return 1;
 		}
 		else{
-			this->TestState = 95;
-			return 95;
+			this->TestState = 0;
+			return 0;
 		}
 	}
 
-	if (atoi((response.substr(0, response.find('.'))).c_str()) > 3){
-		this->TestState = 95;
-		return 95;
-	}
-
-	return 94;
+	return 92;
 }
 
 int CNTR::Simulate_Keystrokes(){
-	// This structure will be used to create the keyboard
-	// input event.
-	INPUT ip;
-	//hello world
-	unsigned char arr[12] = { 0x48, 0x45, 0x4C, 0x4C, 0x4F, 0x20, 0x57, 0x4F, 0x52, 0x4C, 0x44, 0 };
 
-	// Pause for 5 seconds.
+	//Structure for the keyboard event
+	INPUT ip;
+	int i = 0;
+	unsigned char arr[6] = { 0x23, 0x12, 0x26, 0x26, 0x18, 0 };
+
 	Sleep(5000);
 
-	int i = 0;
-
 	while (arr[i] != 0){
-		// Set up a generic keyboard event.
+		//Set up the INPUT structure
 		ip.type = INPUT_KEYBOARD;
-		ip.ki.wScan = 0; // hardware scan code for key
 		ip.ki.time = 0;
+		ip.ki.wVk = 0; //We're doing scan codes instead
 		ip.ki.dwExtraInfo = 0;
 
-		// Press the "A" key
-		ip.ki.wVk = arr[i++]; // virtual-key code for the "a" key
-		ip.ki.dwFlags = 0; // 0 for key press
+		//This let's you do a hardware scan instead of a virtual keypress
+		ip.ki.dwFlags = KEYEVENTF_SCANCODE;
+		ip.ki.wScan = arr[i++];  //Set a unicode character to use (A)
+
+		//Send the press
 		SendInput(1, &ip, sizeof(INPUT));
 
-		// Release the "A" key
-		ip.ki.dwFlags = KEYEVENTF_KEYUP; // KEYEVENTF_KEYUP for key release
+		//Prepare a keyup event
+		ip.ki.dwFlags = KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP;
 		SendInput(1, &ip, sizeof(INPUT));
 	}
 
@@ -276,7 +250,7 @@ int CNTR::Check_Log_File(){
 	length = filestr.tellg(); // find the position of the cursor
 	filestr.close(); // close your file
 
-	std::remove("C:\\Users\\Jusko\\Desktop\\log.txt");
+	//std::remove("C:\\Users\\Jusko\\Desktop\\log.txt");
 
 	if (length == 0){ 
 		std::cout << "Keylogger not successful.\n";
@@ -438,13 +412,12 @@ int CNTR::Launch_Server() {
 			std::cout << "Communication successfully terminated.\n";
 			closesocket(msgsock);
 			WSACleanup();
-			//TerminateProcess(this->h, 0);
 			break;
 		}
-		else if (ret == 2 || ret == 3){
+		else if (ret >= 0 && ret <= 2){
 			continue;
 		}
-		else if (ret >= 94 && ret <= 98){
+		else if (ret >= 90 && ret <= 92){
 			std::cout << "Communication terminated with error.\n";
 			closesocket(msgsock);
 			WSACleanup();
@@ -558,6 +531,7 @@ int _tmain(int argc, _TCHAR* argv[])
 		heh.GetError();
 	}
 
+
 	/*
 	std::cout << "Browser: "	<< heh.Browser << "\n";
 	std::cout << "TestID: "		<< heh.TestID << "\n";
@@ -573,9 +547,9 @@ int _tmain(int argc, _TCHAR* argv[])
 	
 	t.join();
 
-	TerminateProcess(heh.h, 0);
-	
-	//DWORD id = GetCurrentProcessId();
+	// kill browser
+	//TerminateProcess(heh.h, 0);
+
 
 	return 4;
 }
