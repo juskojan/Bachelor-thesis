@@ -102,8 +102,6 @@ int CNTR::Send_ACK(std::string response, SOCKET sock){
 
 	std::string ack = response + "-ACK";
 
-	Sleep(1000);
-
 	int retval = send(sock, ack.c_str(), sizeof(ack.c_str()), 0);
 	if (retval == SOCKET_ERROR)
 	{
@@ -115,17 +113,6 @@ int CNTR::Send_ACK(std::string response, SOCKET sock){
 	// ACK OK
 	return 1;
 }
-
-std::string GetExePath() {
-	wchar_t buffer[MAX_PATH];
-	GetModuleFileName(NULL, buffer, MAX_PATH);
-	std::wstring ws(buffer);
-	std::string path(ws.begin(), ws.end());
-	std::string::size_type pos = path.find_last_of("\\/");
-	
-	return path.substr(0, pos+1);
-}
-
 
 /*
 	RESPONSES TO CLIENT
@@ -141,12 +128,11 @@ int CNTR::Parse_response(std::string response, SOCKET sock){
 		return 90;
 	}
 
-	//FIRST STRING that is supposed to be received is always INIT - return ack containing working directory
+	//FIRST STRING that is supposed to be received is always INIT
 	if ((strcmp((response.substr(0, response.find('.'))).c_str(), "1") == 0)){
 		if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "INIT") == 0)){
 			std::cout << ">>> Test no. " << this->TestID << " initialized in browser " << this->Browser << ".\n";
-			// now respond with current working directory
-			//response = response + "/" + GetExePath();
+			// now respond
 			if (!CNTR::Send_ACK(response, sock)){
 				this->TestState = 91;
 				return 91;
@@ -170,7 +156,7 @@ int CNTR::Parse_response(std::string response, SOCKET sock){
 			this->TestState = 91;
 			return 91;
 		}
-		//std::cout << ">>> Test no. " << this->TestID << " is successful ACK" << response <<".\n";
+
 		this->TestState = 1;
 		return 1;
 	}

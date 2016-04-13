@@ -31,8 +31,6 @@
 #define TEST_SUCCESSFUL 1;
 #define TEST_FAILED 0;
 
-std::string GetExePath();
-
 class CNTR {
 	public:
 		CNTR(int argc, _TCHAR* argv[]);

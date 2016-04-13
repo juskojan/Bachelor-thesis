@@ -1,7 +1,5 @@
 /**********************************************************\
-
-  Auto-generated PRCSAPI.cpp
-
+  INCLUDES
 \**********************************************************/
 #include "JSObject.h"
 #include "variant_list.h"
@@ -23,6 +21,7 @@
 #include <conio.h>
 #include <atlstr.h>
 #include <cstdio>
+#include <cstdlib>
 #include <tlhelp32.h>
 // Need to link with Ws2_32.lib
 #pragma comment (lib, "Ws2_32.lib")
@@ -44,6 +43,99 @@ std::string sID;
 HANDLE myPROC;
 ////////////+
 #include "PRCSAPI.h"
+
+/**********************************************************\
+  FUNCTIONS/METHODS DEFINITIONS
+\**********************************************************/
+
+///////////////////////////////////////////////////////////////////////////////
+/// @fn FB::variant PRCSAPI::launched(void)
+///
+/// @brief  - called at startup, deals with initial communication with server
+///			- first it gets the port number and test ID from shared memory
+///			- then it is possible to make connection with server
+///			- return TRUE if successful, FALSE if not successful
+///////////////////////////////////////////////////////////////////////////////
+FB::variant PRCSAPI::launched(void) {
+	HANDLE hMapFile;
+	LPCTSTR pBuf;
+	int BUF_SIZE = 256;
+	TCHAR szName[]=TEXT("MyFileMappingObject");
+
+	//read/write access, do not inherit the name, name of mapping object
+	hMapFile = OpenFileMapping(FILE_MAP_READ, FALSE, szName);               
+	if (hMapFile == NULL) {
+		//Could not open file mapping object
+		std::string respon = std::to_string(seqnum++) + '.' + sID + ":INIT_FAILED";
+		COMM nov(respon);
+		nov.Communicate();		
+		return FALSE;
+	}
+
+	pBuf = (LPTSTR) MapViewOfFile(hMapFile, FILE_MAP_READ, 0, 0, BUF_SIZE);
+	if (pBuf == NULL) {
+		//Could not map view of file
+		std::string respon = std::to_string(seqnum++) + '.' + sID + ":INIT_FAILED";
+		COMM nov(respon);
+		nov.Communicate();
+		CloseHandle(hMapFile);
+		return FALSE;
+	}
+
+	//string from server in shared memory successfully obtained in pBuf variable
+	std::string temp = CT2A(pBuf);
+	//get port
+	std::string sPort = temp.substr(temp.find(':') + 1, temp.length());
+	Port = stoi(sPort);
+	//get test ID
+	sID = temp.substr(0, temp.find(':'));
+	//unmap & close shared memory
+	UnmapViewOfFile(pBuf);
+	CloseHandle(hMapFile);
+
+	//success! plugin launched/initialized in browser
+	std::string respon = std::to_string(seqnum++) + '.' + sID + ":INIT";
+
+	COMM nov(respon);
+	nov.Communicate();
+	
+	
+	return nov.Received;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+/// @fn FB::variant PRCSAPI::finalize(void)
+///
+/// @brief  Terminate host process (calc).
+///			Send ending message to the server and close the communication.
+///			Kill plugin process so the browser can be closed from server.
+///			Return TRUE if OK.
+///////////////////////////////////////////////////////////////////////////////
+FB::variant PRCSAPI::finalize(void)
+{
+	//terminate host process if there is any, reset seqnum and send END message
+	TerminateProcess(myPROC, 0);
+
+	std::string respon = std::to_string(seqnum++) + '.' + sID + ":END";
+	COMM nov(respon);
+	nov.Communicate();
+
+	seqnum = 1;
+
+	/*
+	//kill plug-in process
+	DWORD id = GetCurrentProcessId();
+	DWORD dwDesiredAccess = PROCESS_TERMINATE;
+	BOOL  bInheritHandle  = FALSE;
+	HANDLE hProcess = OpenProcess(dwDesiredAccess, bInheritHandle, id);
+	if (hProcess == NULL)
+		return FALSE;
+	BOOL result = TerminateProcess(hProcess, 0);
+	CloseHandle(hProcess);
+	*/
+	return TRUE;
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 /// @fn FB::variant PRCSAPI::echo(const FB::variant& msg)
@@ -76,58 +168,16 @@ FB::variant PRCSAPI::echo(const FB::variant& msg)
 	
 	if(b){
 		std::string respon = std::to_string(seqnum++) + '.' + sID + ":SUCCESS";
-		char buf[128];
-		memset(&buf[0], 0, sizeof(buf));	
-		strcpy_s(buf, respon.c_str());
-		SEND_TO_SERVER(buf);
+		COMM nov(respon);
+		nov.Communicate();
 	}
 	else{
 		std::string respon = std::to_string(seqnum++) + '.' + sID + ":FAILURE";
-		char buf[128];
-		memset(&buf[0], 0, sizeof(buf));
-		strcpy_s(buf, respon.c_str());
-		SEND_TO_SERVER(buf);
+		COMM nov(respon);
+		nov.Communicate();
 	}
 
     // return "foobar";
-	return TRUE;
-}
-/*
-	Method finalize:
-		Terminate host process (calc).
-		Send ending message to the server and close the communication.
-		Kill plugin process so the browser can be closed from server.
-		Return 1 if OK.
-*/
-FB::variant PRCSAPI::finalize(const FB::variant& msg)
-{
-	//terminate calc and send END message
-	TerminateProcess(myPROC, 0);
-
-	//end message
-	std::string respon = std::to_string(seqnum++) + '.' + sID + ":END";
-	char buf[128];
-	memset(&buf[0], 0, sizeof(buf));
-	strcpy_s(buf, respon.c_str());
-	if (SEND_TO_SERVER(buf) == -1){
-		return FALSE;
-	}
-
-	seqnum = 1;
-
-	/*
-	//kill plug-in process
-	DWORD id = GetCurrentProcessId();
-	DWORD dwDesiredAccess = PROCESS_TERMINATE;
-	BOOL  bInheritHandle  = FALSE;
-
-	HANDLE hProcess = OpenProcess(dwDesiredAccess, bInheritHandle, id);
-	if (hProcess == NULL)
-		return FALSE;
-
-	BOOL result = TerminateProcess(hProcess, 0);
-	CloseHandle(hProcess);
-	*/
 	return TRUE;
 }
 
@@ -368,123 +418,36 @@ void PRCSAPI::doSomethingTimeConsuming_thread( int num, FB::JSObjectPtr &callbac
 
 
 FB::variant PRCSAPI::memory(void){
-	PROCESSENTRY32 entry;
-    entry.dwSize = sizeof(PROCESSENTRY32);
+	int value = 0;
 
-	int retvalue = 0;
+	// create new child process - host
+	HOST host_proc("C:\\Users\\Jusko\\Desktop\\host 5005");
+	host_proc.CreateChild();
+	std::string ret = host_proc.ReadFromPipe();
+	// append hex 
+	ret = "0x" + ret;
+	ret.erase(ret.size() - 1);
 
-	HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
+	DWORD addr = std::strtoul(ret.c_str(), NULL, 16);
+	// try reading from memory 
+	int retvaluea = ReadProcessMemory(host_proc.host_process, (void*)addr, &value, sizeof(value), 0);
 
-	if (Process32First(snapshot, &entry) == TRUE)
-    {
-        while (Process32Next(snapshot, &entry) == TRUE)
-        {
-			if (wcscmp(entry.szExeFile, L"explorer.exe") == 0)
-            {  
-                HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, entry.th32ProcessID);
-
-				int value = 2;
-				DWORD addr = 0x0000000;
-				
-				retvalue = ReadProcessMemory(hProcess, (void*)addr, &value, sizeof(value), 0);
-				/*
-				cout << "Read   : " << value << endl;
-				cout << "Error  : " << GetLastError();
-				*/
-
-                CloseHandle(hProcess);
-
-				break;
-            }
-        }
-    }
-
-    CloseHandle(snapshot);
-
-	if(retvalue != 0){
-		std::string respon = std::to_string(seqnum++) + '.' + sID + ":SUCCESS";
-		char buf[128];
-		memset(&buf[0], 0, sizeof(buf));	
-		strcpy_s(buf, respon.c_str());
-		SEND_TO_SERVER(buf);
-	}
-	else{
+	TerminateProcess(host_proc.host_process, 0);
+	CloseHandle(host_proc.host_process);
+	// terminate host process with newline
+	host_proc.WriteToPipe("\n");
+	
+	if(!retvaluea){
 		std::string respon = std::to_string(seqnum++) + '.' + sID + ":FAILURE";
-		char buf[128];
-		memset(&buf[0], 0, sizeof(buf));	
-		strcpy_s(buf, respon.c_str());
-		SEND_TO_SERVER(buf);
+		COMM nov(respon);
+		nov.Communicate();
+		return "nespravna adresa " + ret;
 	}
+	std::string respon = std::to_string(seqnum++) + '.' + sID + ":SUCCESS";
+	COMM nov(respon);
+	nov.Communicate();
 
-	return 0;
-}
-
-
-// method called at startup, initial communication with server
-// first, get the port number and test ID from shared memory!!!!!!
-
-FB::variant PRCSAPI::launched(void)
-{
-	HANDLE hMapFile;
-	LPCTSTR pBuf;
-	int BUF_SIZE = 256;
-
-	hMapFile = OpenFileMapping(
-					FILE_MAP_READ,   // read/write access
-					FALSE,                 // do not inherit the name
-					szName);               // name of mapping object
-
-	if (hMapFile == NULL)
-	{
-		_tprintf(TEXT("Could not open file mapping object (%d).\n"),
-				GetLastError());
-		return -1;
-	}
-
-	pBuf = (LPTSTR) MapViewOfFile(hMapFile, // handle to map object
-				FILE_MAP_READ,  // read/write permission
-				0,
-				0,
-				BUF_SIZE);
-
-	if (pBuf == NULL)
-	{
-		_tprintf(TEXT("Could not map view of file (%d).\n"),
-				GetLastError());
-
-		CloseHandle(hMapFile);
-
-		return 1;
-	}
-
-	//string from server in shared memory successfully obtained in pBuf variable
-	std::string temp = CT2A(pBuf);
-
-	std::string sPort = temp.substr(temp.find(':') + 1, temp.length());
-	sID = temp.substr(0, temp.find(':'));
-
-	std::wstring stemp = std::wstring(sID.begin(), sID.end());
-	LPCWSTR sw = stemp.c_str();
-
-	//MessageBox(NULL, sw, sw, MB_OK | MB_ICONERROR);
-	
-	Port = stoi(sPort);
-
-
-	UnmapViewOfFile(pBuf);
-
-	CloseHandle(hMapFile);
-
-	std::string respon = std::to_string(seqnum++) + '.' + sID + ":INIT";
-
-	char buf[128];
-	memset(&buf[0], 0, sizeof(buf));
-	
-	strcpy_s(buf, respon.c_str());
-	SEND_TO_SERVER(buf);
-	return NULL;
-	
-	
+	return "spravna adresa " + ret;
 }
 
 
@@ -601,6 +564,7 @@ int SEND_TO_SERVER(char *Buffer){
 
 	printf("Client: Sent data \"%s\"\n", Buffer);
 
+
 	//closesocket(conn_socket);
 	//WSACleanup();
 		//return -1;
@@ -642,6 +606,309 @@ int SEND_TO_SERVER(char *Buffer){
 
 	closesocket(conn_socket);
 	WSACleanup();
+
+	return 0;
+}
+
+
+/*
+CONSTRUCTOR:
+- create pipes for communication with child
+- child IN/OUT
+*/
+HOST::HOST(std::string hostproc){
+	std::cout << "Constructor:\n";
+
+	//assign exe name
+	hostname = hostproc;
+
+	g_hChildStd_IN_Rd = NULL;
+	g_hChildStd_IN_Wr = NULL;
+	g_hChildStd_OUT_Rd = NULL;
+	g_hChildStd_OUT_Wr = NULL;
+	host_process = NULL;
+
+	SECURITY_ATTRIBUTES saAttr;
+
+	saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
+	saAttr.bInheritHandle = TRUE;
+	saAttr.lpSecurityDescriptor = NULL;
+
+	// Create a pipe for the child process's STDOUT. 
+	if (!CreatePipe(&g_hChildStd_OUT_Rd, &g_hChildStd_OUT_Wr, &saAttr, 0))
+		HOST::ErrorExit(TEXT("StdoutRd CreatePipe"));
+
+	// Ensure the read handle to the pipe for STDOUT is not inherited.
+	if (!SetHandleInformation(g_hChildStd_OUT_Rd, HANDLE_FLAG_INHERIT, 0))
+		HOST::ErrorExit(TEXT("Stdout SetHandleInformation"));
+
+	// Create a pipe for the child process's STDIN.
+	if (!CreatePipe(&g_hChildStd_IN_Rd, &g_hChildStd_IN_Wr, &saAttr, 0))
+		HOST::ErrorExit(TEXT("Stdin CreatePipe"));
+
+	// Ensure the write handle to the pipe for STDIN is not inherited.
+	if (!SetHandleInformation(g_hChildStd_IN_Wr, HANDLE_FLAG_INHERIT, 0))
+		HOST::ErrorExit(TEXT("Stdin SetHandleInformation"));
+
+	std::cout << "PIPES CREATED. \n";
+}
+/*
+	Error parser
+*/
+void HOST::ErrorExit(PTSTR lpszFunction){
+	LPVOID lpMsgBuf;
+	LPVOID lpDisplayBuf;
+	DWORD dw = GetLastError();
+
+	FormatMessage(
+		FORMAT_MESSAGE_ALLOCATE_BUFFER |
+		FORMAT_MESSAGE_FROM_SYSTEM |
+		FORMAT_MESSAGE_IGNORE_INSERTS,
+		NULL,
+		dw,
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+		(LPTSTR)&lpMsgBuf,
+		0, NULL);
+
+	lpDisplayBuf = (LPVOID)LocalAlloc(LMEM_ZEROINIT,
+		(lstrlen((LPCTSTR)lpMsgBuf) + lstrlen((LPCTSTR)lpszFunction) + 40)*sizeof(TCHAR));
+	StringCchPrintf((LPTSTR)lpDisplayBuf,
+		LocalSize(lpDisplayBuf) / sizeof(TCHAR),
+		TEXT("%s failed with error %d: %s"),
+		lpszFunction, dw, lpMsgBuf);
+	MessageBox(NULL, (LPCTSTR)lpDisplayBuf, TEXT("Error"), MB_OK);
+
+	LocalFree(lpMsgBuf);
+	LocalFree(lpDisplayBuf);
+	ExitProcess(1);
+}
+
+/*
+CREATE CHILD:
+- launch child process
+*/
+void HOST::CreateChild(){
+	PROCESS_INFORMATION piProcInfo;
+	STARTUPINFO siStartInfo;
+	BOOL bSuccess = FALSE;
+
+	// Set up members of the PROCESS_INFORMATION structure. 
+
+	std::cout << "PROCESS:\n";
+
+	ZeroMemory(&piProcInfo, sizeof(PROCESS_INFORMATION));
+
+	// Set up members of the STARTUPINFO structure. 
+	// This structure specifies the STDIN and STDOUT handles for redirection.
+
+	ZeroMemory(&siStartInfo, sizeof(STARTUPINFO));
+	siStartInfo.cb = sizeof(STARTUPINFO);
+	siStartInfo.hStdError = g_hChildStd_OUT_Wr;
+	siStartInfo.hStdOutput = g_hChildStd_OUT_Wr;
+	siStartInfo.hStdInput = g_hChildStd_IN_Rd;
+	siStartInfo.dwFlags |= STARTF_USESTDHANDLES;
+
+	// Create the child process. 
+
+	TCHAR szProxyAddr[4096];
+
+	_tcscpy_s(szProxyAddr, CA2T(hostname.c_str()));
+
+	bSuccess = CreateProcess(NULL,
+		szProxyAddr,     // command line 
+		NULL,          // process security attributes 
+		NULL,          // primary thread security attributes 
+		TRUE,          // handles are inherited 
+		0,             // creation flags 
+		NULL,          // use parent's environment 
+		NULL,          // use parent's current directory 
+		&siStartInfo,  // STARTUPINFO pointer 
+		&piProcInfo);  // receives PROCESS_INFORMATION 
+
+	// If an error occurs, exit the application. 
+	if (!bSuccess)
+		HOST::ErrorExit(TEXT("CreateProcess"));
+	else
+	{
+		// Close handles to the child process and its primary thread.
+		// Some applications might keep these handles to monitor the status
+		// of the child process, for example. 
+		std::cout << "STARTED SUCCESSFULLY\n";
+		host_process = piProcInfo.hProcess;
+		//CloseHandle(piProcInfo.hProcess);
+		//CloseHandle(piProcInfo.hThread);
+	}
+}
+
+
+std::string HOST::ReadFromPipe(){
+	DWORD dwRead, dwWritten;
+	CHAR chBuf[4096];
+	BOOL bSuccess = FALSE;
+	HANDLE hParentStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+
+	bSuccess = ReadFile(g_hChildStd_OUT_Rd, chBuf, 4096, &dwRead, NULL);
+	if (dwRead == 0)
+		std::cout << "OMG1\n";
+
+	chBuf[dwRead] = 0;
+	return std::string(chBuf);
+
+	/*bSuccess = WriteFile(hParentStdOut, chBuf,
+	dwRead, &dwWritten, NULL);
+	if (!bSuccess)
+	std::cout << "OMG2\n";*/
+}
+
+
+void HOST::WriteToPipe(std::string what){
+	DWORD dwRead, dwWritten;
+	//CHAR chBuf = what.c_str();
+	BOOL bSuccess = FALSE;
+
+
+	//bSuccess = ReadFile(g_hInputFile, chBuf, 4096, &dwRead, NULL);
+	//if (!bSuccess || dwRead == 0) break;
+
+	bSuccess = WriteFile(g_hChildStd_IN_Wr, what.c_str(), what.length(), &dwWritten, NULL);
+	if (!bSuccess)
+		std::cout << "OMG3\n";
+
+
+	// Close the pipe handle so the child process stops reading. 
+
+	if (!CloseHandle(g_hChildStd_IN_Wr))
+		HOST::ErrorExit(TEXT("StdInWr CloseHandle"));
+}
+
+
+/******************* COMMUNICATION WITH SERVER *******************/
+COMM::COMM(std::string Buff){
+	Buffer = Buff;
+	Port_number = Port;
+	Received = "";
+}
+
+int COMM::Communicate(void){
+	// default to localhost
+	char *server_name = "localhost";
+	char recvBuff[100];
+	int retval;
+	struct sockaddr_in server;
+	struct hostent *hp;
+	WSADATA wsaData;
+	SOCKET  conn_socket;
+	using namespace std;
+
+	if ((retval = WSAStartup(0x202, &wsaData)) != 0)
+	{
+		fprintf(stderr, "Client: WSAStartup() failed with error %d\n", retval);
+		WSACleanup();
+		return -1;
+	}
+	else
+		printf("Client: WSAStartup() is OK.\n");
+
+	hp = gethostbyname(server_name);
+	if (hp == NULL)
+	{
+		fprintf(stderr, "Client: Cannot resolve address \"%s\": Error %d\n", server_name, WSAGetLastError());
+		WSACleanup();
+		return -1;
+	}
+	else
+		printf("Client: gethostbyaddr() is OK.\n");
+
+	// Copy the resolved information into the sockaddr_in structure
+	memset(&server, 0, sizeof(server));
+	memcpy(&(server.sin_addr), hp->h_addr, hp->h_length);
+	server.sin_family = hp->h_addrtype;
+	server.sin_port = htons(Port_number);
+
+	conn_socket = socket(AF_INET, SOCK_STREAM, 0); /* Open a socket */
+	if (conn_socket <0)
+	{
+		fprintf(stderr, "Client: Error Opening socket: Error %d\n", WSAGetLastError());
+		WSACleanup();
+		return -1;
+	}
+	else
+		printf("Client: socket() is OK.\n");
+
+	printf("Client: Client connecting to: %s.\n", hp->h_name);
+	if (connect(conn_socket, (struct sockaddr*)&server, sizeof(server)) == SOCKET_ERROR)
+	{
+		fprintf(stderr, "Client: connect() failed: %d\n", WSAGetLastError());
+		WSACleanup();
+		return -1;
+	}
+	else
+		printf("Client: connect() is OK.\n");
+
+	// Try sending some string
+	retval = send(conn_socket, Buffer.c_str(), strlen(Buffer.c_str()), 0);
+	if (retval == SOCKET_ERROR)
+	{
+		fprintf(stderr, "Client: send() failed: error %d.\n", WSAGetLastError());
+		WSACleanup();
+		return -1;
+	}
+	else
+		printf("Client: send() is OK.\n");
+	//MessageBox(NULL, L"Success send", NULL, NULL);
+	
+	printf("Client: Sent data \"%s\"\n", Buffer.c_str());
+
+	//closesocket(conn_socket);
+	//WSACleanup();
+		//return -1;
+		
+	retval = recv(conn_socket, recvBuff, sizeof(recvBuff), 0);
+	if (retval == SOCKET_ERROR)
+	{
+		fprintf(stderr, "Client: recv() failed: error %d.\n", WSAGetLastError());
+		closesocket(conn_socket);
+		WSACleanup();
+		return -1;
+	}
+	else
+		printf("Client: recv() is OK.\n");
+
+
+	if (retval == 0)
+	{
+		printf("Client: Server closed connection.\n");
+		closesocket(conn_socket);
+		WSACleanup();
+		return -1;
+	}
+
+	//Received = std::string(recvBuff);
+
+	printf("Client: Received %d bytes, data \"%s\" from server.\n", retval, recvBuff);
+
+	/*
+	if (!loopflag)
+	{
+		MessageBox(NULL, L"I am just trying my wedding dress", NULL, NULL);
+		printf("Client: Terminating connection...\n");
+		break;
+	}
+	else
+	{
+		if ((loopcount >= maxloop) && (maxloop >0))
+			break;
+	}
+	*/
+
+	closesocket(conn_socket);
+	WSACleanup();
+
+	return 0;
+}
+
+int COMM::ParseResponse(void){
+	
 
 	return 0;
 }
