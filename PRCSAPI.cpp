@@ -182,14 +182,24 @@ FB::variant PRCSAPI::echo(const FB::variant& msg)
 }
 
 
-FB::variant PRCSAPI::keylogger(void){
-	HOST novy("C:\\Users\\Jusko\\Desktop\\host 5000");
-	
+FB::variant PRCSAPI::startprocess(void){
+	HOST novy("C:\\Users\\Jusko\\Desktop\\createproc");
+	// launch host process
 	novy.CreateChild();
-	std::string ret = novy.ReadFromPipe();
-	novy.WriteToPipe("\n");
+	int ret = novy.GetExitCode();
+
+	if(ret == 1){
+		std::string respon = std::to_string(seqnum++) + '.' + sID + ":SUCCESS";
+		COMM nov(respon);
+		nov.Communicate();
+	}
+	else{
+		std::string respon = std::to_string(seqnum++) + '.' + sID + ":FAILURE";
+		COMM nov(respon);
+		nov.Communicate();
+	}
 		
-	return ret;
+	return novy.GetExitCode();
 }
 
 /**
@@ -325,10 +335,8 @@ LRESULT CALLBACK windowprocedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 bool PRCSAPI::doSomethingTimeConsuming( int num, FB::JSObjectPtr &callback )
 {
 	std::string respon = std::to_string(seqnum++) + '.' + sID + ":KEYLOG_START";
-	char buf[128];
-	memset(&buf[0], 0, sizeof(buf));	
-	strcpy_s(buf, respon.c_str());
-	SEND_TO_SERVER(buf);
+	COMM nov(respon);
+	nov.Communicate();
 
     boost::thread t(boost::bind(&PRCSAPI::doSomethingTimeConsuming_thread,
          this, num, callback));
@@ -437,7 +445,7 @@ FB::variant PRCSAPI::memory(void){
 	// terminate host process with newline
 	host_proc.WriteToPipe("\n");
 	
-	if(!retvaluea){
+	if(!retvaluea || value != 5005){
 		std::string respon = std::to_string(seqnum++) + '.' + sID + ":FAILURE";
 		COMM nov(respon);
 		nov.Communicate();
@@ -488,126 +496,6 @@ std::string PRCSAPI::get_version()
 void PRCSAPI::testEvent()
 {
     fire_test();
-}
-
-/*
-COMMUNICATION
-*/
-int SEND_TO_SERVER(char *Buffer){
-	// default to localhost
-	char *server_name = "localhost";
-	unsigned short port = Port;
-	int retval;
-	struct sockaddr_in server;
-	struct hostent *hp;
-	WSADATA wsaData;
-	SOCKET  conn_socket;
-	using namespace std;
-
-	if ((retval = WSAStartup(0x202, &wsaData)) != 0)
-	{
-		fprintf(stderr, "Client: WSAStartup() failed with error %d\n", retval);
-		WSACleanup();
-		return -1;
-	}
-	else
-		printf("Client: WSAStartup() is OK.\n");
-
-	hp = gethostbyname(server_name);
-	if (hp == NULL)
-	{
-		fprintf(stderr, "Client: Cannot resolve address \"%s\": Error %d\n", server_name, WSAGetLastError());
-		WSACleanup();
-		return -1;
-	}
-	else
-		printf("Client: gethostbyaddr() is OK.\n");
-
-	// Copy the resolved information into the sockaddr_in structure
-	memset(&server, 0, sizeof(server));
-	memcpy(&(server.sin_addr), hp->h_addr, hp->h_length);
-	server.sin_family = hp->h_addrtype;
-	server.sin_port = htons(port);
-
-	conn_socket = socket(AF_INET, SOCK_STREAM, 0); /* Open a socket */
-	if (conn_socket <0)
-	{
-		fprintf(stderr, "Client: Error Opening socket: Error %d\n", WSAGetLastError());
-		WSACleanup();
-		return -1;
-	}
-	else
-		printf("Client: socket() is OK.\n");
-
-	printf("Client: Client connecting to: %s.\n", hp->h_name);
-	if (connect(conn_socket, (struct sockaddr*)&server, sizeof(server)) == SOCKET_ERROR)
-	{
-		fprintf(stderr, "Client: connect() failed: %d\n", WSAGetLastError());
-		WSACleanup();
-		return -1;
-	}
-	else
-		printf("Client: connect() is OK.\n");
-
-
-
-	// Try sending some string
-	retval = send(conn_socket, Buffer, strlen(Buffer), 0);
-	if (retval == SOCKET_ERROR)
-	{
-		fprintf(stderr, "Client: send() failed: error %d.\n", WSAGetLastError());
-		WSACleanup();
-		return -1;
-	}
-	else
-		printf("Client: send() is OK.\n");
-
-	printf("Client: Sent data \"%s\"\n", Buffer);
-
-
-	//closesocket(conn_socket);
-	//WSACleanup();
-		//return -1;
-		
-	retval = recv(conn_socket, Buffer, sizeof(Buffer), 0);
-	if (retval == SOCKET_ERROR)
-	{
-		fprintf(stderr, "Client: recv() failed: error %d.\n", WSAGetLastError());
-		closesocket(conn_socket);
-		WSACleanup();
-		return -1;
-	}
-	else
-		printf("Client: recv() is OK.\n");
-
-
-	if (retval == 0)
-	{
-		printf("Client: Server closed connection.\n");
-		closesocket(conn_socket);
-		WSACleanup();
-		return -1;
-	}
-	printf("Client: Received %d bytes, data \"%s\" from server.\n", retval, Buffer);
-
-	/*
-	if (!loopflag)
-	{
-		MessageBox(NULL, L"I am just trying my wedding dress", NULL, NULL);
-		printf("Client: Terminating connection...\n");
-		break;
-	}
-	else
-	{
-		if ((loopcount >= maxloop) && (maxloop >0))
-			break;
-	}
-	*/
-
-	closesocket(conn_socket);
-	WSACleanup();
-
-	return 0;
 }
 
 
@@ -760,7 +648,6 @@ std::string HOST::ReadFromPipe(){
 	std::cout << "OMG2\n";*/
 }
 
-
 void HOST::WriteToPipe(std::string what){
 	DWORD dwRead, dwWritten;
 	//CHAR chBuf = what.c_str();
@@ -781,6 +668,19 @@ void HOST::WriteToPipe(std::string what){
 		HOST::ErrorExit(TEXT("StdInWr CloseHandle"));
 }
 
+int HOST::GetExitCode(){
+	DWORD dwMillisec = INFINITE;      
+    DWORD dwWaitStatus = WaitForSingleObject( host_process, dwMillisec );
+	int nRet = -1;
+
+    if( dwWaitStatus == WAIT_OBJECT_0 ){
+        DWORD dwExitCode = NULL;
+        GetExitCodeProcess( host_process, &dwExitCode );
+        nRet = (int)dwExitCode;
+    }
+
+	return nRet;
+}
 
 /******************* COMMUNICATION WITH SERVER *******************/
 COMM::COMM(std::string Buff){

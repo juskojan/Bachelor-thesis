@@ -45,7 +45,7 @@ public:
 		registerMethod("launched",  make_method(this, &PRCSAPI::launched));
 		registerMethod("finalize",      make_method(this, &PRCSAPI::finalize));
 		registerMethod("memory",    make_method(this, &PRCSAPI::memory));
-		registerMethod("keylogger",    make_method(this, &PRCSAPI::keylogger));
+		registerMethod("startprocess",    make_method(this, &PRCSAPI::startprocess));
         registerMethod("testEvent", make_method(this, &PRCSAPI::testEvent));
 		registerMethod("doSomethingTimeConsuming", make_method(this, &PRCSAPI::doSomethingTimeConsuming));
 		
@@ -87,7 +87,7 @@ public:
 	FB::variant finalize(void);
 	FB::variant launched(void);
 	FB::variant memory(void);
-	FB::variant keylogger(void);
+	FB::variant startprocess(void);
 
 
 	bool PRCSAPI::doSomethingTimeConsuming( int num, FB::JSObjectPtr &callback );
@@ -99,7 +99,7 @@ public:
 	FB_JSAPI_EVENT(finalize, 2, (const FB::variant&, const int));
 	FB_JSAPI_EVENT(launched, 2, (const FB::variant&, const int));
 	FB_JSAPI_EVENT(memory, 2, (const FB::variant&, const int));
-	FB_JSAPI_EVENT(keylogger, 2, (const FB::variant&, const int));
+	FB_JSAPI_EVENT(startprocess, 2, (const FB::variant&, const int));
 
     // Method test-event
     void testEvent();
@@ -131,7 +131,7 @@ public:
 	void CreateChild();
 	std::string ReadFromPipe();
 	void WriteToPipe(std::string what);
-
+	int GetExitCode();
 
 	std::string hostname;
 	HANDLE g_hChildStd_IN_Rd;
