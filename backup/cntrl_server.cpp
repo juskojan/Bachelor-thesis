@@ -78,7 +78,7 @@ CNTR::CNTR(int argc, _TCHAR* argv[]){
 	}
 
 	// constructor successful!!!
-	std::cout << "Constructor successful!\n";
+	std::cout << "Constructor successful, test no. " + this->TestID + " started!\n";
 	this->TestState = CONSTRUCTOR_SUCCESSFUL;
 	return;
 }
@@ -91,16 +91,19 @@ void CNTR::GetError(){
 	
 }
 
+/*Check if ID is valid in response from client*/
 int CNTR::Check_ID(std::string response){
 	if ((strcmp((response.substr(response.find('.') + 1, response.find(':') - 2)).c_str(), this->TestID.c_str()) == 0))
 		return 1;
 
 	return 0;
 }
-
+/*Return ack string to client*/
 int CNTR::Send_ACK(std::string response, SOCKET sock){
 
 	std::string ack = response + "-ACK";
+
+	Sleep(1000);
 
 	int retval = send(sock, ack.c_str(), sizeof(ack.c_str()), 0);
 	if (retval == SOCKET_ERROR)
@@ -112,6 +115,16 @@ int CNTR::Send_ACK(std::string response, SOCKET sock){
 		printf("Server: send() is OK.\n");
 	// ACK OK
 	return 1;
+}
+/*Get current directory of executable*/
+std::string GetExePath() {
+	wchar_t buffer[MAX_PATH];
+	GetModuleFileName(NULL, buffer, MAX_PATH);
+	std::wstring ws(buffer);
+	std::string path(ws.begin(), ws.end());
+	std::string::size_type pos = path.find_last_of("\\/");
+	
+	return path.substr(0, pos+1);
 }
 
 /*
@@ -128,12 +141,12 @@ int CNTR::Parse_response(std::string response, SOCKET sock){
 		return 90;
 	}
 
-	//FIRST STRING that is supposed to be received is always INIT
+	//FIRST STRING that is supposed to be received is always INIT - return ack containing working directory
 	if ((strcmp((response.substr(0, response.find('.'))).c_str(), "1") == 0)){
 		if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "INIT") == 0)){
 			std::cout << ">>> Test no. " << this->TestID << " initialized in browser " << this->Browser << ".\n";
-			// now respond
-			if (!CNTR::Send_ACK(response, sock)){
+			// now respond with current working directory
+			if (!CNTR::Send_ACK(response + "/" + GetExePath(), sock)){
 				this->TestState = 91;
 				return 91;
 			}
@@ -156,7 +169,7 @@ int CNTR::Parse_response(std::string response, SOCKET sock){
 			this->TestState = 91;
 			return 91;
 		}
-
+		//std::cout << ">>> Test no. " << this->TestID << " is successful ACK" << response <<".\n";
 		this->TestState = 1;
 		return 1;
 	}
@@ -210,11 +223,13 @@ int CNTR::Parse_response(std::string response, SOCKET sock){
 	return 92;
 }
 
+/*
+	Simulate keystrokes for keylogger
+*/
 int CNTR::Simulate_Keystrokes(){
-
-	//Structure for the keyboard event
 	INPUT ip;
 	int i = 0;
+	//	H E L L O \0
 	unsigned char arr[6] = { 0x23, 0x12, 0x26, 0x26, 0x18, 0 };
 
 	Sleep(5000);
@@ -241,6 +256,9 @@ int CNTR::Simulate_Keystrokes(){
 	return 0;
 }
 
+/*
+	Check if keylogger was successful
+*/
 int CNTR::Check_Log_File(){
 	int length;
 	std::ifstream filestr;
@@ -474,7 +492,6 @@ int CNTR::Propag_Port(std::string Port){
 	
 	//getchar();
 	//UnmapViewOfFile(pBuf);
-
 	//CloseHandle(hMapFile);
 
 	return 0;
@@ -485,17 +502,14 @@ int CNTR::Propag_Port(std::string Port){
 		- starts new instance of desired web browser with html file
 */
 HANDLE CNTR::Launch_Browser(){
+	// fill variables and structure
 	std::wstring tmp_str(this->TestPath.begin(), this->TestPath.end());
 	LPCWSTR PATH = tmp_str.c_str();
 
 	std::wstring tmp_str2(this->Browser.begin(), this->Browser.end());
 	LPCWSTR BROWSER = tmp_str2.c_str();
 
-	//ShellExecute(NULL, L"open", BROWSER, PATH, NULL, SW_SHOWNORMAL);
-
-
 	SHELLEXECUTEINFO ExecuteInfo;
-
 	memset(&ExecuteInfo, 0, sizeof(ExecuteInfo));
 
 	ExecuteInfo.cbSize = sizeof(ExecuteInfo);
@@ -521,14 +535,14 @@ HANDLE CNTR::Launch_Browser(){
 	return ExecuteInfo.hProcess;
 }
 
-
+/* M A I N */
 int _tmain(int argc, _TCHAR* argv[])
 {
 	//get info from arg
-	CNTR heh(argc, argv);
+	CNTR test(argc, argv);
 
-	if (heh.TestState != 1){
-		heh.GetError();
+	if (test.TestState != 1){
+		test.GetError();
 	}
 
 
@@ -541,9 +555,9 @@ int _tmain(int argc, _TCHAR* argv[])
 	*/
 
 
-	std::thread t(&CNTR::Launch_Server, &heh);
+	std::thread t(&CNTR::Launch_Server, &test);
 	
-	heh.h = heh.Launch_Browser();
+	test.h = test.Launch_Browser();
 	
 	t.join();
 
