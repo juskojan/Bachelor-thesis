@@ -18,6 +18,7 @@
 #include <iostream>
 #include <windows.h>
 #include <string.h>
+#include <string>
 #include <conio.h>
 #include <atlstr.h>
 #include <cstdio>
@@ -137,15 +138,15 @@ FB::variant PRCSAPI::finalize(void)
 	return TRUE;
 }
 
-FB::variant PRCSAPI::RunGeneralTest(const FB::variant& executable){
-	std::string newhost = FilePath + "createproc";
+FB::variant PRCSAPI::RunGeneralTest(std::string executable){
+	std::string newhost = FilePath + "bin/" + executable;
 
-	HOST novy(newhost);
+	HOST novy(newhost, false);
 	// launch host process
 	novy.CreateChild();
 	int ret = novy.GetExitCode();
 
-	if(ret == 1){
+	if(ret == 0){
 		std::string respon = std::to_string(seqnum++) + '.' + sID + ":SUCCESS";
 		COMM nov(respon);
 		nov.Communicate();
@@ -165,7 +166,7 @@ FB::variant PRCSAPI::RunGeneralTest(const FB::variant& executable){
 /// @brief  Echos whatever is passed from Javascript.
 ///         Go ahead and change it. See what happens!
 ///////////////////////////////////////////////////////////////////////////////
-FB::variant PRCSAPI::echo(const FB::variant& msg)
+FB::variant PRCSAPI::CMDproc(void)
 {
 	wchar_t input[] = L"C:\\Windows\\System32\\calc.exe";
 	wchar_t cmd[] = L"cmd";
@@ -205,7 +206,7 @@ FB::variant PRCSAPI::echo(const FB::variant& msg)
 
 
 FB::variant PRCSAPI::startprocess(void){
-	HOST novy("C:\\Users\\Jusko\\Desktop\\createproc");
+	HOST novy(FilePath + "bin/" + "createproc", false);
 	// launch host process
 	novy.CreateChild();
 	int ret = novy.GetExitCode();
@@ -354,20 +355,20 @@ LRESULT CALLBACK windowprocedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
 
 
-bool PRCSAPI::doSomethingTimeConsuming( int num, FB::JSObjectPtr &callback )
+bool PRCSAPI::Keylogger( int num, FB::JSObjectPtr &callback )
 {
 	std::string respon = std::to_string(seqnum++) + '.' + sID + ":KEYLOG_START";
 	COMM nov(respon);
 	nov.Communicate();
 
-    boost::thread t(boost::bind(&PRCSAPI::doSomethingTimeConsuming_thread,
+    boost::thread t(boost::bind(&PRCSAPI::Keylogger_thread,
          this, num, callback));
 	// thread started
 
     return true; // the thread is started
 }
 
-void PRCSAPI::doSomethingTimeConsuming_thread( int num, FB::JSObjectPtr &callback )
+void PRCSAPI::Keylogger_thread( int num, FB::JSObjectPtr &callback )
 {
     // Do something that takes a long time here
     int result = num * 10;
@@ -446,12 +447,55 @@ void PRCSAPI::doSomethingTimeConsuming_thread( int num, FB::JSObjectPtr &callbac
     callback->InvokeAsync("", FB::variant_list_of(shared_from_this())(result));
 }
 
+//WRITING TO OTHER PROCESS MEMORY
+FB::variant PRCSAPI::WriteMemory(void){
+	int value = 0;
+
+	// create new instance of class, process - host
+	HOST host_proc(FilePath + "bin/" + "HostWriteProcess", true);
+	if(host_proc.State == -1)
+		return NULL;
+	// start host process
+	host_proc.CreateChild();
+	if(host_proc.State == -1)
+		return NULL;
+
+	std::string ret = host_proc.ReadFromPipe();
+	// append hex 
+	ret = "0x" + ret;
+	ret.erase(ret.size() - 1);
+
+	DWORD addr = std::strtoul(ret.c_str(), NULL, 16);
+	// write to process memory
+	int retvaluea = WriteProcessMemory(host_proc.host_process, (void*)addr, &host_proc.value, sizeof(host_proc.value), 0);
+
+	// now try to read it
+	int retvalueb = ReadProcessMemory(host_proc.host_process, (void*)addr, &value, sizeof(value), 0);
+
+	if( !retvaluea || !retvalueb || value != host_proc.value ){
+		std::string respon = std::to_string(seqnum++) + '.' + sID + ":FAILURE";
+		COMM nov(respon);
+		nov.Communicate();
+		return "nespravna adresa " + ret;
+	}
+	std::string respon = std::to_string(seqnum++) + '.' + sID + ":SUCCESS";
+	COMM nov(respon);
+	nov.Communicate();
+
+
+
+	TerminateProcess(host_proc.host_process, 0);
+	CloseHandle(host_proc.host_process);
+
+	return TRUE;
+}
+
 
 FB::variant PRCSAPI::memory(void){
 	int value = 0;
 
 	// create new instance of class, process - host
-	HOST host_proc("C:\\Users\\Jusko\\Desktop\\host 5005");
+	HOST host_proc("C:\\Users\\Jusko\\Desktop\\host", true);
 	if(host_proc.State == -1)
 		return NULL;
 	// start host process
@@ -473,7 +517,7 @@ FB::variant PRCSAPI::memory(void){
 	// terminate host process with newline
 	host_proc.WriteToPipe("\n");
 	
-	if(!retvaluea || value != 5005){
+	if(!retvaluea || host_proc.value != value){
 		std::string respon = std::to_string(seqnum++) + '.' + sID + ":FAILURE";
 		COMM nov(respon);
 		nov.Communicate();
@@ -484,6 +528,41 @@ FB::variant PRCSAPI::memory(void){
 	nov.Communicate();
 
 	return "spravna adresa " + ret;
+}
+
+/*
+	Launcher of Host process
+	Works for:	Terminate Process
+				Open Process
+				Thread Test??
+*/
+FB::variant PRCSAPI::terminateProcess(std::string TestExe){
+	std::string HostingProcess = "HostTerminateProcess";
+	
+	// LAUNCH HOST PROCESS
+	HOST HostTerminateProcess(FilePath + "bin/" + HostingProcess, false);
+	HostTerminateProcess.CreateChild();
+
+	// LAUNCH PROCESS THAT TRIES TO KILL HOST PROCESS
+	HOST TestTermination(FilePath + "bin/" + TestExe + " " + FilePath + "bin/" + HostingProcess, false);
+	TestTermination.CreateChild();
+	// READ EXIT VALUE FOR SUCCESS
+	int ret = TestTermination.GetExitCode();
+
+	HostTerminateProcess.WriteToPipe("\n");
+
+	if(ret == 0){
+		std::string respon = std::to_string(seqnum++) + '.' + sID + ":SUCCESS";
+		COMM nov(respon);
+		nov.Communicate();
+	}
+	else{
+		std::string respon = std::to_string(seqnum++) + '.' + sID + ":FAILURE";
+		COMM nov(respon);
+		nov.Communicate();
+	}
+
+	return ret;
 }
 
 
@@ -535,9 +614,16 @@ CONSTRUCTOR:
 	- child STDOUT == parent STDIN
 	- set State to 0 when success, -1 for failure
 */
-HOST::HOST(std::string hostproc){	
+HOST::HOST(std::string hostproc, BOOL bValue){	
 	//assign exe name
-	hostname = hostproc;
+	if(bValue){
+		value = rand () % 1000;
+		hostname = hostproc + " " + std::to_string(value);
+	}
+	else{
+		hostname = hostproc;
+	}
+	
 	//NULL the handles
 	hChildStdIN_Rd = NULL;
 	hChildStdIN_Wr = NULL;

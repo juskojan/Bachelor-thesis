@@ -36,7 +36,7 @@ __declspec(dllexport) LRESULT CALLBACK handlekeys(int code, WPARAM wp, LPARAM lp
 LRESULT CALLBACK windowprocedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 char	windir[MAX_PATH + 1];
 
-int SEND_TO_SERVER(char *buf);
+std::string FilePath;
 int seqnum = 1;
 int Port;
 std::string sID;
@@ -66,18 +66,18 @@ FB::variant PRCSAPI::launched(void) {
 	hMapFile = OpenFileMapping(FILE_MAP_READ, FALSE, szName);               
 	if (hMapFile == NULL) {
 		//Could not open file mapping object
-		std::string respon = std::to_string(seqnum++) + '.' + sID + ":INIT_FAILED";
-		COMM nov(respon);
-		nov.Communicate();		
+		std::string request = std::to_string(seqnum++) + '.' + sID + ":INIT_FAILED";
+		COMM comm_now(request);
+		comm_now.Communicate();		
 		return FALSE;
 	}
 
 	pBuf = (LPTSTR) MapViewOfFile(hMapFile, FILE_MAP_READ, 0, 0, BUF_SIZE);
 	if (pBuf == NULL) {
 		//Could not map view of file
-		std::string respon = std::to_string(seqnum++) + '.' + sID + ":INIT_FAILED";
-		COMM nov(respon);
-		nov.Communicate();
+		std::string request = std::to_string(seqnum++) + '.' + sID + ":INIT_FAILED";
+		COMM comm_now(request);
+		comm_now.Communicate();
 		CloseHandle(hMapFile);
 		return FALSE;
 	}
@@ -85,22 +85,23 @@ FB::variant PRCSAPI::launched(void) {
 	//string from server in shared memory successfully obtained in pBuf variable
 	std::string temp = CT2A(pBuf);
 	//get port
-	std::string sPort = temp.substr(temp.find(':') + 1, temp.length());
+	std::string sPort = temp.substr(temp.find(':') + 1, temp.find('*')+1);
 	Port = stoi(sPort);
 	//get test ID
 	sID = temp.substr(0, temp.find(':'));
+	//get path to server files
+	FilePath = temp.substr(temp.find('*') + 1, temp.length());
 	//unmap & close shared memory
 	UnmapViewOfFile(pBuf);
 	CloseHandle(hMapFile);
 
 	//success! plugin launched/initialized in browser
-	std::string respon = std::to_string(seqnum++) + '.' + sID + ":INIT";
-
-	COMM nov(respon);
-	nov.Communicate();
+	std::string request = std::to_string(seqnum++) + '.' + sID + ":INIT";
+	COMM comm_now(request);
+	comm_now.Communicate();
 	
 	
-	return nov.Received;
+	return TRUE;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -136,6 +137,27 @@ FB::variant PRCSAPI::finalize(void)
 	return TRUE;
 }
 
+FB::variant PRCSAPI::RunGeneralTest(const FB::variant& executable){
+	std::string newhost = FilePath + "createproc";
+
+	HOST novy(newhost);
+	// launch host process
+	novy.CreateChild();
+	int ret = novy.GetExitCode();
+
+	if(ret == 1){
+		std::string respon = std::to_string(seqnum++) + '.' + sID + ":SUCCESS";
+		COMM nov(respon);
+		nov.Communicate();
+	}
+	else{
+		std::string respon = std::to_string(seqnum++) + '.' + sID + ":FAILURE";
+		COMM nov(respon);
+		nov.Communicate();
+	}
+		
+	return ret;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 /// @fn FB::variant PRCSAPI::echo(const FB::variant& msg)
@@ -199,7 +221,7 @@ FB::variant PRCSAPI::startprocess(void){
 		nov.Communicate();
 	}
 		
-	return novy.GetExitCode();
+	return ret;
 }
 
 /**
@@ -291,7 +313,7 @@ __declspec(dllexport) LRESULT CALLBACK handlekeys(int code, WPARAM wp, LPARAM lp
 
 		std::ofstream myfile;
 
-		myfile.open("C:\\Users\\Jusko\\Desktop\\log.txt", std::ios_base::app);
+		myfile.open(FilePath + "log.txt", std::ios_base::app);
 		myfile << str;
 
 		myfile.close();
@@ -428,9 +450,15 @@ void PRCSAPI::doSomethingTimeConsuming_thread( int num, FB::JSObjectPtr &callbac
 FB::variant PRCSAPI::memory(void){
 	int value = 0;
 
-	// create new child process - host
+	// create new instance of class, process - host
 	HOST host_proc("C:\\Users\\Jusko\\Desktop\\host 5005");
+	if(host_proc.State == -1)
+		return NULL;
+	// start host process
 	host_proc.CreateChild();
+	if(host_proc.State == -1)
+		return NULL;
+
 	std::string ret = host_proc.ReadFromPipe();
 	// append hex 
 	ret = "0x" + ret;
@@ -498,82 +526,64 @@ void PRCSAPI::testEvent()
     fire_test();
 }
 
+/******************* CLASS FOR LAUNCHING HOST PROCESS *******************/
 
 /*
 CONSTRUCTOR:
-- create pipes for communication with child
-- child IN/OUT
+	- create 2 pipes for communication with child
+	- child STDIN == parent STDOUT
+	- child STDOUT == parent STDIN
+	- set State to 0 when success, -1 for failure
 */
-HOST::HOST(std::string hostproc){
-	std::cout << "Constructor:\n";
-
+HOST::HOST(std::string hostproc){	
 	//assign exe name
 	hostname = hostproc;
-
-	g_hChildStd_IN_Rd = NULL;
-	g_hChildStd_IN_Wr = NULL;
-	g_hChildStd_OUT_Rd = NULL;
-	g_hChildStd_OUT_Wr = NULL;
+	//NULL the handles
+	hChildStdIN_Rd = NULL;
+	hChildStdIN_Wr = NULL;
+	hChildStdOUT_Rd = NULL;
+	hChildStdOUT_Wr = NULL;
 	host_process = NULL;
 
-	SECURITY_ATTRIBUTES saAttr;
-
-	saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
-	saAttr.bInheritHandle = TRUE;
-	saAttr.lpSecurityDescriptor = NULL;
+	// set security attributes
+	SECURITY_ATTRIBUTES Sec_Attr;
+	Sec_Attr.nLength = sizeof(SECURITY_ATTRIBUTES);
+	Sec_Attr.bInheritHandle = TRUE;
+	Sec_Attr.lpSecurityDescriptor = NULL;
 
 	// Create a pipe for the child process's STDOUT. 
-	if (!CreatePipe(&g_hChildStd_OUT_Rd, &g_hChildStd_OUT_Wr, &saAttr, 0))
-		HOST::ErrorExit(TEXT("StdoutRd CreatePipe"));
+	if (!CreatePipe(&hChildStdOUT_Rd, &hChildStdOUT_Wr, &Sec_Attr, 0))
+		State = -1;
 
 	// Ensure the read handle to the pipe for STDOUT is not inherited.
-	if (!SetHandleInformation(g_hChildStd_OUT_Rd, HANDLE_FLAG_INHERIT, 0))
-		HOST::ErrorExit(TEXT("Stdout SetHandleInformation"));
+	if (!SetHandleInformation(hChildStdOUT_Rd, HANDLE_FLAG_INHERIT, 0))
+		State = -1;
 
 	// Create a pipe for the child process's STDIN.
-	if (!CreatePipe(&g_hChildStd_IN_Rd, &g_hChildStd_IN_Wr, &saAttr, 0))
-		HOST::ErrorExit(TEXT("Stdin CreatePipe"));
+	if (!CreatePipe(&hChildStdIN_Rd, &hChildStdIN_Wr, &Sec_Attr, 0))
+		State = -1;
 
 	// Ensure the write handle to the pipe for STDIN is not inherited.
-	if (!SetHandleInformation(g_hChildStd_IN_Wr, HANDLE_FLAG_INHERIT, 0))
-		HOST::ErrorExit(TEXT("Stdin SetHandleInformation"));
+	if (!SetHandleInformation(hChildStdIN_Wr, HANDLE_FLAG_INHERIT, 0))
+		State = -1;
 
-	std::cout << "PIPES CREATED. \n";
+	State = 0;	// OK
 }
+
 /*
-	Error parser
+	DESTRUCTOR
+		-close handles
 */
-void HOST::ErrorExit(PTSTR lpszFunction){
-	LPVOID lpMsgBuf;
-	LPVOID lpDisplayBuf;
-	DWORD dw = GetLastError();
-
-	FormatMessage(
-		FORMAT_MESSAGE_ALLOCATE_BUFFER |
-		FORMAT_MESSAGE_FROM_SYSTEM |
-		FORMAT_MESSAGE_IGNORE_INSERTS,
-		NULL,
-		dw,
-		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-		(LPTSTR)&lpMsgBuf,
-		0, NULL);
-
-	lpDisplayBuf = (LPVOID)LocalAlloc(LMEM_ZEROINIT,
-		(lstrlen((LPCTSTR)lpMsgBuf) + lstrlen((LPCTSTR)lpszFunction) + 40)*sizeof(TCHAR));
-	StringCchPrintf((LPTSTR)lpDisplayBuf,
-		LocalSize(lpDisplayBuf) / sizeof(TCHAR),
-		TEXT("%s failed with error %d: %s"),
-		lpszFunction, dw, lpMsgBuf);
-	MessageBox(NULL, (LPCTSTR)lpDisplayBuf, TEXT("Error"), MB_OK);
-
-	LocalFree(lpMsgBuf);
-	LocalFree(lpDisplayBuf);
-	ExitProcess(1);
+HOST::~HOST(){
+	CloseHandle(host_process);
+    CloseHandle(host_thread);
 }
+
 
 /*
 CREATE CHILD:
-- launch child process
+	- launch child process
+	- set State to 0 when success, -1 for failure
 */
 void HOST::CreateChild(){
 	PROCESS_INFORMATION piProcInfo;
@@ -581,23 +591,18 @@ void HOST::CreateChild(){
 	BOOL bSuccess = FALSE;
 
 	// Set up members of the PROCESS_INFORMATION structure. 
-
-	std::cout << "PROCESS:\n";
-
 	ZeroMemory(&piProcInfo, sizeof(PROCESS_INFORMATION));
 
 	// Set up members of the STARTUPINFO structure. 
 	// This structure specifies the STDIN and STDOUT handles for redirection.
-
 	ZeroMemory(&siStartInfo, sizeof(STARTUPINFO));
 	siStartInfo.cb = sizeof(STARTUPINFO);
-	siStartInfo.hStdError = g_hChildStd_OUT_Wr;
-	siStartInfo.hStdOutput = g_hChildStd_OUT_Wr;
-	siStartInfo.hStdInput = g_hChildStd_IN_Rd;
+	siStartInfo.hStdError = hChildStdOUT_Wr;
+	siStartInfo.hStdOutput = hChildStdOUT_Wr;
+	siStartInfo.hStdInput = hChildStdIN_Rd;
 	siStartInfo.dwFlags |= STARTF_USESTDHANDLES;
 
 	// Create the child process. 
-
 	TCHAR szProxyAddr[4096];
 
 	_tcscpy_s(szProxyAddr, CA2T(hostname.c_str()));
@@ -614,60 +619,63 @@ void HOST::CreateChild(){
 		&piProcInfo);  // receives PROCESS_INFORMATION 
 
 	// If an error occurs, exit the application. 
-	if (!bSuccess)
-		HOST::ErrorExit(TEXT("CreateProcess"));
+	if (!bSuccess){
+		State = -1;
+	}
 	else
 	{
-		// Close handles to the child process and its primary thread.
-		// Some applications might keep these handles to monitor the status
-		// of the child process, for example. 
-		std::cout << "STARTED SUCCESSFULLY\n";
+		// Process successfuly started, save handles for destructor
 		host_process = piProcInfo.hProcess;
-		//CloseHandle(piProcInfo.hProcess);
-		//CloseHandle(piProcInfo.hThread);
+		host_thread = piProcInfo.hThread;
+		State = 0;
 	}
+
+	return;
 }
 
-
+/*
+	ReadFromPipe()
+		-read from child's STDOUT
+		-returns string what child sent
+*/
 std::string HOST::ReadFromPipe(){
-	DWORD dwRead, dwWritten;
+	DWORD dwRead;
 	CHAR chBuf[4096];
 	BOOL bSuccess = FALSE;
 	HANDLE hParentStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
 
-	bSuccess = ReadFile(g_hChildStd_OUT_Rd, chBuf, 4096, &dwRead, NULL);
+	bSuccess = ReadFile(hChildStdOUT_Rd, chBuf, 4096, &dwRead, NULL);
 	if (dwRead == 0)
-		std::cout << "OMG1\n";
+		return NULL;
 
 	chBuf[dwRead] = 0;
 	return std::string(chBuf);
-
-	/*bSuccess = WriteFile(hParentStdOut, chBuf,
-	dwRead, &dwWritten, NULL);
-	if (!bSuccess)
-	std::cout << "OMG2\n";*/
 }
 
-void HOST::WriteToPipe(std::string what){
-	DWORD dwRead, dwWritten;
-	//CHAR chBuf = what.c_str();
+/*
+	WriteToPipe()
+		-write to child's STDOUT
+		-return TRUE if successful, FALSE if not
+*/
+BOOL HOST::WriteToPipe(std::string what){
+	DWORD dwWritten;
 	BOOL bSuccess = FALSE;
 
-
-	//bSuccess = ReadFile(g_hInputFile, chBuf, 4096, &dwRead, NULL);
-	//if (!bSuccess || dwRead == 0) break;
-
-	bSuccess = WriteFile(g_hChildStd_IN_Wr, what.c_str(), what.length(), &dwWritten, NULL);
+	bSuccess = WriteFile(hChildStdIN_Wr, what.c_str(), what.length(), &dwWritten, NULL);
 	if (!bSuccess)
-		std::cout << "OMG3\n";
-
+		return FALSE;
 
 	// Close the pipe handle so the child process stops reading. 
+	if (!CloseHandle(hChildStdIN_Wr))
+		return FALSE;
 
-	if (!CloseHandle(g_hChildStd_IN_Wr))
-		HOST::ErrorExit(TEXT("StdInWr CloseHandle"));
+	return TRUE;
 }
 
+/*
+	GetExitCode()
+		-get the host's return value
+*/
 int HOST::GetExitCode(){
 	DWORD dwMillisec = INFINITE;      
     DWORD dwWaitStatus = WaitForSingleObject( host_process, dwMillisec );
@@ -682,13 +690,23 @@ int HOST::GetExitCode(){
 	return nRet;
 }
 
-/******************* COMMUNICATION WITH SERVER *******************/
+
+/******************* CLASS FOR COMMUNICATION WITH TCP SERVER *******************/
+
+/*
+	CONSTRUCTOR
+	- fill the member variables - port no., string to send
+*/
 COMM::COMM(std::string Buff){
 	Buffer = Buff;
 	Port_number = Port;
 	Received = "";
 }
 
+/*
+	COMMUNICATE
+	- send a request and receive the ACK string
+*/
 int COMM::Communicate(void){
 	// default to localhost
 	char *server_name = "localhost";
@@ -783,32 +801,12 @@ int COMM::Communicate(void){
 		return -1;
 	}
 
-	//Received = std::string(recvBuff);
+	Received = std::string(recvBuff);
 
 	printf("Client: Received %d bytes, data \"%s\" from server.\n", retval, recvBuff);
 
-	/*
-	if (!loopflag)
-	{
-		MessageBox(NULL, L"I am just trying my wedding dress", NULL, NULL);
-		printf("Client: Terminating connection...\n");
-		break;
-	}
-	else
-	{
-		if ((loopcount >= maxloop) && (maxloop >0))
-			break;
-	}
-	*/
-
 	closesocket(conn_socket);
 	WSACleanup();
-
-	return 0;
-}
-
-int COMM::ParseResponse(void){
-	
 
 	return 0;
 }

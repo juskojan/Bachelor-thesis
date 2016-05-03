@@ -42,6 +42,7 @@ public:
         m_plugin(plugin), m_host(host)
     {
         registerMethod("echo",      make_method(this, &PRCSAPI::echo));
+		registerMethod("RunGeneralTest",      make_method(this, &PRCSAPI::RunGeneralTest));
 		registerMethod("launched",  make_method(this, &PRCSAPI::launched));
 		registerMethod("finalize",      make_method(this, &PRCSAPI::finalize));
 		registerMethod("memory",    make_method(this, &PRCSAPI::memory));
@@ -84,6 +85,7 @@ public:
 
     // Method echo
     FB::variant echo(const FB::variant& msg);
+	FB::variant RunGeneralTest(const FB::variant& executable);
 	FB::variant finalize(void);
 	FB::variant launched(void);
 	FB::variant memory(void);
@@ -96,6 +98,7 @@ public:
     // Event helpers
     FB_JSAPI_EVENT(test, 0, ());
     FB_JSAPI_EVENT(echo, 2, (const FB::variant&, const int));
+	FB_JSAPI_EVENT(RunGeneralTest, 2, (const FB::variant&, const int));
 	FB_JSAPI_EVENT(finalize, 2, (const FB::variant&, const int));
 	FB_JSAPI_EVENT(launched, 2, (const FB::variant&, const int));
 	FB_JSAPI_EVENT(memory, 2, (const FB::variant&, const int));
@@ -125,21 +128,22 @@ T	CLASS
 */
 class HOST{
 public:
-
-	HOST(std::string hostproc);
-	void ErrorExit(PTSTR lpszFunction);
-	void CreateChild();
-	std::string ReadFromPipe();
-	void WriteToPipe(std::string what);
-	int GetExitCode();
-
-	std::string hostname;
-	HANDLE g_hChildStd_IN_Rd;
-	HANDLE g_hChildStd_IN_Wr;
-	HANDLE g_hChildStd_OUT_Rd;
-	HANDLE g_hChildStd_OUT_Wr;
-
-	HANDLE host_process;
+	
+	HOST(std::string hostproc);				//constructor
+	~HOST();								//destructor
+	void CreateChild();						//create child process
+	std::string ReadFromPipe();				//read from child STDOUT
+	BOOL WriteToPipe(std::string what);		//write to child's STDIN
+	int GetExitCode();						//fetch return value
+	
+	std::string hostname;					//path to host process's executable
+	HANDLE hChildStdIN_Rd;					//handles to pipes
+	HANDLE hChildStdIN_Wr;
+	HANDLE hChildStdOUT_Rd;
+	HANDLE hChildStdOUT_Wr;
+	HANDLE host_process;					//handle for host process
+	HANDLE host_thread;						//handle for host thread
+	int State;
 };
 
 
@@ -147,7 +151,6 @@ class COMM{
 public:
 	COMM(std::string Buff);
 	int Communicate(void);
-	int ParseResponse(void);
 
 	int Port_number;
 	std::string Buffer;

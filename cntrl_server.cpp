@@ -86,6 +86,8 @@ CNTR::CNTR(int argc, _TCHAR* argv[]){
 		return;
 	}
 
+	this->TestPath = "\"" + this->MyDirectory + this->TestPath + "\"";
+
 	// constructor successful!!!
 	std::cout << "Constructor successful, test no. " + this->TestID + " started!\n";
 	this->TestState = CONSTRUCTOR_SUCCESSFUL;

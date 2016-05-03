@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+	<meta charset="UTF-8">
+	<title>Test no. 1</title>
+	<link rel="stylesheet" type="text/css" href="styling.css">
+	
+	<script type="text/javascript">
+        function plugin0()
+        {
+            return document.getElementById('plugin0');
+        }
+        plugin = plugin0;
+        function addEvent(obj, name, func)
+        {
+            if (obj.attachEvent) {
+                obj.attachEvent("on"+name, func);
+            } else {
+                obj.addEventListener(name, func, false); 
+            }
+        }
+        
+        function load()
+        {
+            addEvent(plugin(), 'test', function(){
+                alert("Received a test event from the plugin.")
+            });
+        }
+        function pluginLoaded() {
+			plugin().launched();
+			plugin().terminateProcess("TestThreadCaseAsk");
+			plugin().finalize();
+        }
+        
+        function addTestEvent()
+        {
+            addEvent(plugin(), 'echo', function(txt,count){
+                alert(txt+count);
+            });
+        }
+        
+        function testEvent()
+        {
+            plugin().testEvent();
+        }
+        
+        function pluginValid()
+        {
+            if(plugin().valid){
+                alert(plugin().echo("This plugin seems to be working!"));
+		
+            } else {
+                alert("Plugin is not working :(");
+            }
+        }
+    </script>
+</head>
+<body onload="load()">
+<div id="page">
+
+<header id="header">
+	<div class="inner">
+		<h1><a href="#"><span>FITLayout</span></a></h1>
+	
+		<div id="topmenu">
+		    <a href="#" class="login">@Ján Jusko</a>
+			<a class="hidden" href="#contentbox">Skip menu</a>
+			<a class="hidden" href="#content">Skip to main content</a>
+			<hr>
+		</div>
+		
+		<div id="social" class="icons">
+			<a href="https://plus.google.com/u/0/103312886409976230505" class="google"><span>Google+</span></a>
+			<a href="https://www.facebook.com/juskojan" class="fb"><span>Facebook</span></a>
+			<a href="http://www.linkedin.com/" class="linkedin"><span>Linked In</span></a>
+		</div>
+	
+		<nav id="menubar">
+		<ul id="menu">
+		    <li class="dropdown"><a href="#ov">Overview</a></li>
+		    <li class="dropdown"><a href="#tools">Tools</a></li>
+		    <li class="dropdown"><a href="#license">License</a></li>
+		    <li class="dropdown"><a href="#about">About</a></li>
+		    <li><a href="#references">Contact</a></li>
+		</ul>
+		</nav>
+	</div>
+</header>
+	
+<!-- Titulni obsah -->	
+<section id="main">
+	<div class="inner">
+		<header>
+			<h2>Test 5: Terminating a process</h2>
+			<!-- <p class="btn demo"><a href="#">Demo</a></p>
+			<p class="btn docs"><a href="#">Documentation</a></p>-->
+			<p>
+				This test tries to terminate a running process.
+			</p>
+		</header>
+		
+		<section>
+			<object id="plugin0" type="application/x-prcs" width="600" height="300">
+				<param name="onload" value="pluginLoaded" />
+			</object>
+			<h3 id="ov">Overview</h3>
+			<p>This test firstly launches its own "host" process which the test is later trying to terminate. Termination is done by TrustPort's provided executable.</p>
+				<!--
+			<h3 id="tools">WinApi Functions</h3>
+			<h4>CreateProcess()</h4>
+			<p>Here will be description of function.</p>
+				-->
+			
+			<h3 id="license">License</h3>
+			<p>This content is available under the terms of the <a href="http://www.gnu.org/copyleft/gpl.html">GNU General Public License</a>.</p>
+			
+		</section>
+		
+	</div>
+</section>
+
+<!-- Podruzny obsah 	-->
+
+<section id="related">
+	<div class="inner">
+		<section class="col" id="news">
+			<h3 id="about">About this project</h3>
+				<p> This website is part of the bachelor thesis - Automated testing of web browser's vulnerabilities.
+					The bachelor thesis was created by Ján Jusko at Brno University of Technology.
+				</p>
+				<strong>1.5.2016</strong>
+							
+				
+							
+			
+		</section>
+	
+		<aside>
+			<div id="references" class="abox">
+				<h3>Author</h3>
+				<a class="thumb d2" href="#">
+					<p>	Ján Jusko <br>
+						xjusko00@stud.fit.vutbr.cz<br>
+						
+					</p>
+					
+				</a>
+			</div>
+			<div id="didyouknow" class="abox">
+				
+			</div>
+		</aside>
+	</div>
+</section>
+
+
+<footer id="footer">
+<div class="inner">
+	<hr>
+	<ul class="menu">
+		    <li><a href="#">Home</a></li>
+		    <li><a href="#">News</a></li>
+		    <li><a href="#">Contact</a></li>
+	</ul>
+	<div class="copy">Copyright © All rights reserved.</div>
+</div>
+</footer>
+
+</div>
+
+</body>
+</html>

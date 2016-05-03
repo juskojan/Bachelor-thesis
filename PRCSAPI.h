@@ -36,19 +36,21 @@ public:
     ///
     /// @see FB::JSAPIAuto::registerMethod
     /// @see FB::JSAPIAuto::registerProperty
-    /// @see FB::JSAPIAuto::registerEvent
+    /// @see FB::JSAPIAuto::registerEvent  terminateProcess
     ////////////////////////////////////////////////////////////////////////////
     PRCSAPI(const PRCSPtr& plugin, const FB::BrowserHostPtr& host) :
         m_plugin(plugin), m_host(host)
     {
-        registerMethod("echo",      make_method(this, &PRCSAPI::echo));
+        registerMethod("CMDproc",      make_method(this, &PRCSAPI::CMDproc));
 		registerMethod("RunGeneralTest",      make_method(this, &PRCSAPI::RunGeneralTest));
 		registerMethod("launched",  make_method(this, &PRCSAPI::launched));
 		registerMethod("finalize",      make_method(this, &PRCSAPI::finalize));
 		registerMethod("memory",    make_method(this, &PRCSAPI::memory));
+		registerMethod("WriteMemory",    make_method(this, &PRCSAPI::WriteMemory));
+		registerMethod("terminateProcess",    make_method(this, &PRCSAPI::terminateProcess));
 		registerMethod("startprocess",    make_method(this, &PRCSAPI::startprocess));
         registerMethod("testEvent", make_method(this, &PRCSAPI::testEvent));
-		registerMethod("doSomethingTimeConsuming", make_method(this, &PRCSAPI::doSomethingTimeConsuming));
+		registerMethod("keylogger", make_method(this, &PRCSAPI::Keylogger));
 		
         
         // Read-write property
@@ -84,24 +86,28 @@ public:
     std::string get_version();
 
     // Method echo
-    FB::variant echo(const FB::variant& msg);
-	FB::variant RunGeneralTest(const FB::variant& executable);
+    FB::variant CMDproc(void);
+	FB::variant RunGeneralTest(std::string executable);
 	FB::variant finalize(void);
 	FB::variant launched(void);
 	FB::variant memory(void);
+	FB::variant WriteMemory(void);
+	FB::variant terminateProcess(std::string TestExe);
 	FB::variant startprocess(void);
 
 
-	bool PRCSAPI::doSomethingTimeConsuming( int num, FB::JSObjectPtr &callback );
-	void PRCSAPI::doSomethingTimeConsuming_thread( int num, FB::JSObjectPtr &callback );
+	bool PRCSAPI::Keylogger( int num, FB::JSObjectPtr &callback );
+	void PRCSAPI::Keylogger_thread( int num, FB::JSObjectPtr &callback );
     
     // Event helpers
     FB_JSAPI_EVENT(test, 0, ());
-    FB_JSAPI_EVENT(echo, 2, (const FB::variant&, const int));
+    FB_JSAPI_EVENT(CMDproc, 2, (const FB::variant&, const int));
 	FB_JSAPI_EVENT(RunGeneralTest, 2, (const FB::variant&, const int));
 	FB_JSAPI_EVENT(finalize, 2, (const FB::variant&, const int));
 	FB_JSAPI_EVENT(launched, 2, (const FB::variant&, const int));
 	FB_JSAPI_EVENT(memory, 2, (const FB::variant&, const int));
+	FB_JSAPI_EVENT(WriteMemory, 2, (const FB::variant&, const int));
+	FB_JSAPI_EVENT(terminateProcess, 2, (const FB::variant&, const int));
 	FB_JSAPI_EVENT(startprocess, 2, (const FB::variant&, const int));
 
     // Method test-event
@@ -129,7 +135,7 @@ T	CLASS
 class HOST{
 public:
 	
-	HOST(std::string hostproc);				//constructor
+	HOST(std::string hostproc, BOOL value);	//constructor
 	~HOST();								//destructor
 	void CreateChild();						//create child process
 	std::string ReadFromPipe();				//read from child STDOUT
@@ -141,6 +147,8 @@ public:
 	HANDLE hChildStdIN_Wr;
 	HANDLE hChildStdOUT_Rd;
 	HANDLE hChildStdOUT_Wr;
+
+	int value;
 	HANDLE host_process;					//handle for host process
 	HANDLE host_thread;						//handle for host thread
 	int State;

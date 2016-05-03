@@ -16,7 +16,16 @@ CNTR::CNTR(int argc, _TCHAR* argv[]){
 		this->TestState = ARGUMENT_ERROR;
 		return;
 	}
-
+	
+	//get the current working directory path
+	wchar_t buffer[MAX_PATH];
+	GetModuleFileName(NULL, buffer, MAX_PATH);
+	std::wstring ws(buffer);
+	std::string path(ws.begin(), ws.end());
+	std::string::size_type pos = path.find_last_of("\\/");
+	this->MyDirectory = path.substr(0, pos + 1);
+	
+	//init strings
 	this->h = NULL;
 	this->TestID = "";
 	this->Browser = "";
@@ -30,13 +39,13 @@ CNTR::CNTR(int argc, _TCHAR* argv[]){
 
 	// find out which browser to use!!
 	switch (Browser_ID){
-		case 25:
+		case FIREFOX:
 			this->Browser = "firefox";
 			break;
-		case 30:
+		case CHROME:
 			this->Browser = "chrome";
 			break;
-		case 35:
+		case EXPLORER:
 			this->Browser = "iexplore";
 			break;
 		default:
@@ -55,8 +64,8 @@ CNTR::CNTR(int argc, _TCHAR* argv[]){
 	int offset = NULL;
 	std::string line = "";
 	std::string delimiter = "\t";
-	// open file  to search
-	fileInput.open("C:\\Users\\Jusko\\Desktop\\tests.txt");
+	// open file  to search, file has to be located in directory with server
+	fileInput.open(this->MyDirectory + "tests.txt");
 	if (fileInput.is_open()) {
 		while (getline(fileInput, line)) {
 			if ((offset = line.find((this->TestID).c_str(), 0)) != std::string::npos) {
@@ -91,20 +100,13 @@ void CNTR::GetError(){
 	
 }
 
-/*Check if ID is valid in response from client*/
-int CNTR::Check_ID(std::string response){
-	if ((strcmp((response.substr(response.find('.') + 1, response.find(':') - 2)).c_str(), this->TestID.c_str()) == 0))
-		return 1;
-
-	return 0;
-}
-/*Return ack string to client*/
+/*
+	Return ack string to client
+*/
 int CNTR::Send_ACK(std::string response, SOCKET sock){
 
 	std::string ack = response + "-ACK";
-
-	Sleep(1000);
-
+	//std::cout << ack;
 	int retval = send(sock, ack.c_str(), sizeof(ack.c_str()), 0);
 	if (retval == SOCKET_ERROR)
 	{
@@ -113,18 +115,8 @@ int CNTR::Send_ACK(std::string response, SOCKET sock){
 	}
 	else
 		printf("Server: send() is OK.\n");
-	// ACK OK
-	return 1;
-}
-/*Get current directory of executable*/
-std::string GetExePath() {
-	wchar_t buffer[MAX_PATH];
-	GetModuleFileName(NULL, buffer, MAX_PATH);
-	std::wstring ws(buffer);
-	std::string path(ws.begin(), ws.end());
-	std::string::size_type pos = path.find_last_of("\\/");
 	
-	return path.substr(0, pos+1);
+	return 1;
 }
 
 /*
@@ -135,10 +127,10 @@ std::string GetExePath() {
 */
 int CNTR::Parse_response(std::string response, SOCKET sock){
 	// check if test ID is right
-	if (!CNTR::Check_ID(response)){
+	if (!strcmp((response.substr(response.find('.') + 1, response.find(':') - 2)).c_str(), this->TestID.c_str()) == 0){
 		std::cout << "Wrong ID.\n";
-		this->TestState = 90;
-		return 90;
+		this->TestState = WRONG_REQUEST;
+		return WRONG_REQUEST;
 	}
 
 	//FIRST STRING that is supposed to be received is always INIT - return ack containing working directory
@@ -146,18 +138,17 @@ int CNTR::Parse_response(std::string response, SOCKET sock){
 		if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "INIT") == 0)){
 			std::cout << ">>> Test no. " << this->TestID << " initialized in browser " << this->Browser << ".\n";
 			// now respond with current working directory
-			if (!CNTR::Send_ACK(response + "/" + GetExePath(), sock)){
-				this->TestState = 91;
-				return 91;
+			if (!CNTR::Send_ACK(response + "/" + this->MyDirectory, sock)){
+				this->TestState = FAILED_TO_ACK;
+				return FAILED_TO_ACK;
 			}
-
-			this->TestState = 2;
-			return 2;
+			this->TestState = INIT_RECEIVED;
+			return INIT_RECEIVED;
 		}
 		else{
 			//wrong keyword
-			this->TestState = 90;
-			return 90;
+			this->TestState = WRONG_REQUEST;
+			return WRONG_REQUEST;
 		}
 	}
 
@@ -166,44 +157,45 @@ int CNTR::Parse_response(std::string response, SOCKET sock){
 		std::cout << ">>> Test no. " << this->TestID << " is successful" << ".\n";
 
 		if (!CNTR::Send_ACK(response, sock)){
-			this->TestState = 91;
-			return 91;
+			this->TestState = FAILED_TO_ACK;
+			return FAILED_TO_ACK;
 		}
 		//std::cout << ">>> Test no. " << this->TestID << " is successful ACK" << response <<".\n";
-		this->TestState = 1;
-		return 1;
+		this->TestState = TEST_SUCCESSFUL;
+		this->TestSuccess = TRUE;
+		return TEST_SUCCESSFUL;
 	}
 	else if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "FAILURE") == 0)){
 		std::cout << ">>> Test no. " << this->TestID << " has been prevented" << ".\n";
 
 		if (!CNTR::Send_ACK(response, sock)){
-			this->TestState = 91;
-			return 91;
+			this->TestState = FAILED_TO_ACK;
+			return FAILED_TO_ACK;
 		}
 
-		this->TestState = 0;
-		return 0;
+		this->TestState = TEST_FAILED;
+		this->TestSuccess = FALSE;
+		return TEST_FAILED;
 	}
 	else if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "END") == 0)){
 		std::cout << ">>> Test no. " << this->TestID << " finished" << ".\n";
 
 		if (!CNTR::Send_ACK(response, sock)){
-			this->TestState = 91;
-			return 91;
+			this->TestState = FAILED_TO_ACK;
+			return FAILED_TO_ACK;
 		}
 
-		Sleep(1000);
 
-		this->TestState = 4;
-		return 4;	
+		this->TestState = END_RECEIVED;
+		return END_RECEIVED;
 	}
 	//keylogger only
 	else if (strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "KEYLOG_START") == 0){
 		std::cout << ">>> Keylogger running.\n";
 		//ack
 		if (!CNTR::Send_ACK(response, sock)){
-			this->TestState = 91;
-			return 91;
+			this->TestState = FAILED_TO_ACK;
+			return FAILED_TO_ACK;
 		}
 		
 		//simulate keyboard input
@@ -211,12 +203,14 @@ int CNTR::Parse_response(std::string response, SOCKET sock){
 
 		//success?
 		if (CNTR::Check_Log_File()){
-			this->TestState = 1;
-			return 1;
+			this->TestState = TEST_SUCCESSFUL;
+			this->TestSuccess = TRUE;
+			return TEST_SUCCESSFUL;
 		}
 		else{
-			this->TestState = 0;
-			return 0;
+			this->TestSuccess = FALSE;
+			this->TestState = TEST_FAILED;
+			return TEST_FAILED;
 		}
 	}
 
@@ -230,25 +224,24 @@ int CNTR::Simulate_Keystrokes(){
 	INPUT ip;
 	int i = 0;
 	//	H E L L O \0
-	unsigned char arr[6] = { 0x23, 0x12, 0x26, 0x26, 0x18, 0 };
+	unsigned char keys[6] = { 0x23, 0x12, 0x26, 0x26, 0x18, 0 };
 
-	Sleep(5000);
-
-	while (arr[i] != 0){
+	// send input one by one
+	while (keys[i] != 0){
 		//Set up the INPUT structure
 		ip.type = INPUT_KEYBOARD;
 		ip.ki.time = 0;
-		ip.ki.wVk = 0; //We're doing scan codes instead
+		ip.ki.wVk = 0;
 		ip.ki.dwExtraInfo = 0;
 
 		//This let's you do a hardware scan instead of a virtual keypress
 		ip.ki.dwFlags = KEYEVENTF_SCANCODE;
-		ip.ki.wScan = arr[i++];  //Set a unicode character to use (A)
+		ip.ki.wScan = keys[i++];  //set character
 
-		//Send the press
+		//PRESS KEY
 		SendInput(1, &ip, sizeof(INPUT));
 
-		//Prepare a keyup event
+		//KEYUP
 		ip.ki.dwFlags = KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP;
 		SendInput(1, &ip, sizeof(INPUT));
 	}
@@ -263,12 +256,14 @@ int CNTR::Check_Log_File(){
 	int length;
 	std::ifstream filestr;
 
-	filestr.open("C:\\Users\\Jusko\\Desktop\\log.txt", std::ios::binary); // open your file
+	std::string logfile = this->MyDirectory + "log.txt";
+
+	filestr.open(logfile, std::ios::binary); // open your file
 	filestr.seekg(0, std::ios::end); // put the "cursor" at the end of the file
 	length = filestr.tellg(); // find the position of the cursor
 	filestr.close(); // close your file
 
-	//std::remove("C:\\Users\\Jusko\\Desktop\\log.txt");
+	std::remove(logfile.c_str());
 
 	if (length == 0){ 
 		std::cout << "Keylogger not successful.\n";
@@ -291,7 +286,7 @@ int CNTR::Check_Log_File(){
 */
 int CNTR::Launch_Server() {
 	/* Variables */
-	char Buffer[128];
+	char Buffer[BUFLEN];
 	int fromlen = NULL;
 	int retval = NULL;
 	struct sockaddr_in local, from;
@@ -324,10 +319,6 @@ int CNTR::Launch_Server() {
 	else
 		printf("Server: socket() is OK.\n");
 
-	/*
-	int ReceiveTimeout = 3000;
-	int e = setsockopt(listen_socket, SOL_SOCKET, SO_RCVTIMEO, (char*)&ReceiveTimeout, sizeof(int));
-	*/
 
 	// bind() associates a local address and port combination with the socket just created.
 	int res = bind(listen_socket, (struct sockaddr*)&local, sizeof(local));
@@ -355,7 +346,9 @@ int CNTR::Launch_Server() {
 	}
 
 	//we obtained port number, lets write it into the shared memory
-	CNTR::Propag_Port(std::to_string(Generated_Port));
+	res = CNTR::Propag_Port(std::to_string(Generated_Port));
+	if (res == -1)
+		return 0;
 
 	// listen()
 	if (listen(listen_socket, 5) == SOCKET_ERROR)
@@ -369,7 +362,7 @@ int CNTR::Launch_Server() {
 
 	std::string received;
 	
-	// LOOP
+	// Communication loop
 	while (1)
 	{
 		fromlen = sizeof(from);
@@ -383,25 +376,10 @@ int CNTR::Launch_Server() {
 		else
 			printf("Server: accept() is OK.\n");
 		printf("Server: accepted connection from %s \n", inet_ntoa(from.sin_addr));
+
+
 		
-		/*
-		WSAOVERLAPPED ol;
-		ol.hEvent = CreateEvent(...);
-		WSARecv(,, &ol, NULL);
-		HANDLE wait[] = { args.stopEvent, ol.hEvent };
-		switch (WaitForMultipleObjects(_countof(wait), wait, FALSE, INFINITE))
-		{
-		case WAIT_OBJECT_0:
-		// stopevent
-		break;
-		case WAIT_OBJECT_0+1:
-		/// recv event
-		}
-		*/
-		
-		// In the case of SOCK_STREAM, the server can do recv() and send() on
-		// the accepted socket and then close it.
-		retval = recv(msgsock, Buffer, 128, 0);
+		retval = recv(msgsock, Buffer, BUFLEN, 0);
 		
 		if (retval == SOCKET_ERROR)
 		{
@@ -416,7 +394,7 @@ int CNTR::Launch_Server() {
 		{
 			printf("Server: Client closed connection.\n");
 			closesocket(msgsock);
-			continue;
+			break;
 		}
 
 		Buffer[retval] = 0;
@@ -424,18 +402,18 @@ int CNTR::Launch_Server() {
 
 		received = std::string(Buffer);
 
-		int ret = CNTR::Parse_response(received, msgsock);
+		int state = CNTR::Parse_response(received, msgsock);
 		
-		if (ret == 4){
+		if (state == END_RECEIVED){
 			std::cout << "Communication successfully terminated.\n";
 			closesocket(msgsock);
 			WSACleanup();
 			break;
 		}
-		else if (ret >= 0 && ret <= 2){
+		else if (state == TEST_FAILED || state == TEST_SUCCESSFUL || state == INIT_RECEIVED){
 			continue;
 		}
-		else if (ret >= 90 && ret <= 92){
+		else if (state == WRONG_REQUEST || state == FAILED_TO_ACK){
 			std::cout << "Communication terminated with error.\n";
 			closesocket(msgsock);
 			WSACleanup();
@@ -450,49 +428,43 @@ int CNTR::Launch_Server() {
 /* Write ID:port string to the shared memory, client will know the path! */
 int CNTR::Propag_Port(std::string Port){
 	TCHAR szName[] = TEXT("MyFileMappingObject");
-	TCHAR szPort[100];
-	Port = this->TestID + ':' + Port;
-	szPort[Port.length()] = 0;
+	TCHAR szPort[256];
 
+	//convert into form TESTID:PORT
+	Port = this->TestID + ':' + Port + '*' + this->MyDirectory;
+	szPort[Port.length()] = 0;
 	_tcscpy_s(szPort, CA2T(Port.c_str()));
 	
-
-	HANDLE hMapFile = CreateFileMapping(
-		INVALID_HANDLE_VALUE,    // use paging file
-		NULL,                    // default security
-		PAGE_READWRITE,          // read/write access
-		0,                       // maximum object size (high-order DWORD)
-		256,	                 // maximum object size (low-order DWORD)
-		szName);                 // name of mapping object
-
-	if (hMapFile == NULL)
+	// Create handle to Shared Memory File
+	HANDLE hShMemFile = CreateFileMapping(
+		INVALID_HANDLE_VALUE,	// use paging file
+		NULL,					// default security
+		PAGE_READWRITE,			// read/write access
+		0,						// maximum object size (high-order DWORD)
+		256,					// maximum object size (low-order DWORD)
+		szName);				// name of mapping object
+	if (hShMemFile == NULL)
 	{
-		_tprintf(TEXT("Could not create file mapping object (%d).\n"),
-			GetLastError());
-		return 1;
+		_tprintf(TEXT("Could not create file mapping object (%d).\n"), GetLastError());
+		return -1;
 	}
-	LPCTSTR pBuf = (LPTSTR)MapViewOfFile(hMapFile,   // handle to map object
-		FILE_MAP_ALL_ACCESS,				 // read/write permission
+	
+	LPCTSTR Buff = (LPTSTR)MapViewOfFile(hShMemFile,	// handle to map object
+		FILE_MAP_ALL_ACCESS,							// read/write permission
 		0,
 		0,
 		256);
 
-	if (pBuf == NULL)
+	if (Buff == NULL)
 	{
-		_tprintf(TEXT("Could not map view of file (%d).\n"),
-			GetLastError());
-
-		CloseHandle(hMapFile);
-
-		return 1;
+		_tprintf(TEXT("Could not map view of file (%d).\n"), GetLastError());
+		CloseHandle(hShMemFile);
+		return -1;
 	}
-	
-	CopyMemory((PVOID)pBuf, szPort, (_tcslen(szPort) * sizeof(TCHAR)));
+
+	//Copy our string to the memory
+	CopyMemory((PVOID)Buff, szPort, (_tcslen(szPort) * sizeof(TCHAR)));
 	std::cout << "Written to memory: " << Port << "\n";
-	
-	//getchar();
-	//UnmapViewOfFile(pBuf);
-	//CloseHandle(hMapFile);
 
 	return 0;
 }
@@ -500,6 +472,7 @@ int CNTR::Propag_Port(std::string Port){
 /*
 	BROWSER LAUNCHER
 		- starts new instance of desired web browser with html file
+		- returns HANDLE to the created browser's process
 */
 HANDLE CNTR::Launch_Browser(){
 	// fill variables and structure
@@ -523,14 +496,9 @@ HANDLE CNTR::Launch_Browser(){
 	ExecuteInfo.hInstApp = 0;
 
 	if (ShellExecuteEx(&ExecuteInfo) == FALSE){
-		this->TestState = 90;
+		this->TestState = WRONG_REQUEST;
 		return NULL;
 	}
-
-	//std::cout << ExecuteInfo.hProcess;
-	//TerminateProcess(ExecuteInfo.hProcess, 0);
-	//TerminateProcess(ExecuteInfo.hProcess, 1);
-	// Could not start application -> call 'GetLastError()'
 
 	return ExecuteInfo.hProcess;
 }
@@ -541,30 +509,35 @@ int _tmain(int argc, _TCHAR* argv[])
 	//get info from arg
 	CNTR test(argc, argv);
 
-	if (test.TestState != 1){
+	if (test.TestState != CONSTRUCTOR_SUCCESSFUL){
 		test.GetError();
 	}
 
+	
+	std::cout << "Browser: "	<< test.Browser << "\n";
+	std::cout << "TestID: "		<< test.TestID << "\n";
+	std::cout << "Path: "		<< test.TestPath << "\n";
+	std::cout << "State: "		<< test.TestState << "\n";
+	std::cout << "Handle: "		<< test.h << "\n";
+	
 
-	/*
-	std::cout << "Browser: "	<< heh.Browser << "\n";
-	std::cout << "TestID: "		<< heh.TestID << "\n";
-	std::cout << "Path: "		<< heh.TestPath << "\n";
-	std::cout << "State: "		<< heh.TestState << "\n";
-	std::cout << "Handle: "		<< heh.h << "\n";
-	*/
 
 
+	// start thread
 	std::thread t(&CNTR::Launch_Server, &test);
 	
+	// launch browser
 	test.h = test.Launch_Browser();
 	
 	t.join();
 
-	// kill browser
-	//TerminateProcess(heh.h, 0);
-
-
-	return 4;
+	
+	if (test.TestSuccess == TRUE){
+		std::cout << ">>>>> TEST SUCCESSFUL\n";
+		return 0;
+	}
+	else{
+		std::cout << ">>>>> TEST NOT SUCCESSFUL\n";
+		return 1;
+	}
 }
-
