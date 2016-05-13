@@ -2,56 +2,28 @@
 <html lang="cs">
 <head>
 	<meta charset="UTF-8">
-	<title>Test no. 1</title>
+	<title>Test no. 14</title>
 	<link rel="stylesheet" type="text/css" href="styling.css">
-	
+	<link rel="shortcut icon" href="images/favicon.ico" />	
 	<script type="text/javascript">
         function plugin0()
         {
             return document.getElementById('plugin0');
         }
         plugin = plugin0;
-        function addEvent(obj, name, func)
-        {
-            if (obj.attachEvent) {
-                obj.attachEvent("on"+name, func);
-            } else {
-                obj.addEventListener(name, func, false); 
-            }
-        }
-        
-        function load()
-        {
-            addEvent(plugin(), 'test', function(){
-                alert("Received a test event from the plugin.")
-            });
-        }
+
         function pluginLoaded() {
 			plugin().launched();
-			plugin().RunGeneralTest("TestFileReadCase");
+			var x = plugin().RunGeneralTest("TestFileReadCase");
+			if(x == 1){
+				document.getElementById('myImage').src = "images/OK.png";
+				document.getElementById('textik').innerHTML = 'Malicious activity blocked.';
+			}
+			else if(x == 0){
+				document.getElementById('myImage').src = "images/NOK.png";
+				document.getElementById('textik').innerHTML = 'Malicious activity successful.';
+			}
 			plugin().finalize();
-        }
-        
-        function addTestEvent()
-        {
-            addEvent(plugin(), 'echo', function(txt,count){
-                alert(txt+count);
-            });
-        }
-        
-        function testEvent()
-        {
-            plugin().testEvent();
-        }
-        
-        function pluginValid()
-        {
-            if(plugin().valid){
-                alert(plugin().echo("This plugin seems to be working!"));
-		
-            } else {
-                alert("Plugin is not working :(");
-            }
         }
     </script>
 </head>
@@ -91,12 +63,15 @@
 <section id="main">
 	<div class="inner">
 		<header>
-			<h2>Test 1: Starting New Process</h2>
+			<h2>Test 14: Reading a file</h2>
 			<!-- <p class="btn demo"><a href="#">Demo</a></p>
 			<p class="btn docs"><a href="#">Documentation</a></p>-->
 			<p>
-				This test tries to start new process.
+				This test tries to read an arbitrary file.
 			</p>
+			<img id="myImage" onclick="changeImage()" src="images/rotate.gif" width="104" height="104">
+			<br>
+			<span id="textik"> Malicious activity launched. </span>
 		</header>
 		
 		<section>
@@ -104,11 +79,7 @@
 				<param name="onload" value="pluginLoaded" />
 			</object>
 			<h3 id="ov">Overview</h3>
-			<p>This test is trying to start new process by calling WinApi function <i>CreateProcess()</i> directly from plug-in code.</p>
-				
-			<h3 id="tools">WinApi Functions</h3>
-			<h4>CreateProcess()</h4>
-			<p>Here will be description of function.</p>
+			<p>This test launches an executable file <i>TestFileReadCase</i> that tries to read from a file located in filesystem.</p>
 			
 			
 			<h3 id="license">License</h3>
@@ -145,9 +116,6 @@
 					</p>
 					
 				</a>
-			</div>
-			<div id="didyouknow" class="abox">
-				
 			</div>
 		</aside>
 	</div>

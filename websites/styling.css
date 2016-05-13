@@ -199,12 +199,13 @@ object{
 	margin-right:30px;
 	padding-left:15px;
 	float:right;
-	margin-bottom:20px;
+	margin-bottom:200px;
 	border:2px solid rgb(247,248,255);
 }
 #related{
-	margin-top:150px;
+	margin-top:200px;
 }
+
 
 h3{
 	font-family: Arial, sans-serif;
@@ -337,4 +338,14 @@ strong{
 	margin-bottom:-26px;
 	padding-left:10px;
 	padding-top:10px;
+}
+
+img{
+	margin-left:30px;
+}
+span{
+	margin-left:12px;
+	font-family: Arial, sans-serif;
+	font-size: 15px;
+	font-style:bold;
 }

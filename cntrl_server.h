@@ -16,6 +16,7 @@
 #include <atlstr.h>
 
 
+
 #define WSA_ERROR 23
 #define FIREFOX 25
 #define CHROME 30
@@ -28,6 +29,7 @@
 
 #define WRONG_REQUEST 90
 #define FAILED_TO_ACK 91
+#define INIT_FAILED 92
 
 #define ARGUMENT_ERROR 100
 #define CONSTRUCTOR_ERROR 101
@@ -48,7 +50,6 @@ class CNTR {
 		int Propag_Port(std::string Port);
 		HANDLE Launch_Browser();
 		int Parse_response(std::string response, SOCKET sock);
-		void GetError();
 		int Simulate_Keystrokes();
 		int Check_Log_File();
 
@@ -60,7 +61,6 @@ class CNTR {
 		std::string TestPath;
 		int TestState;
 		BOOL TestSuccess;
-		HANDLE h;
 
 		std::string MyDirectory;
 };

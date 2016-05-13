@@ -45,7 +45,7 @@ public:
 		registerMethod("RunGeneralTest",      make_method(this, &PRCSAPI::RunGeneralTest));
 		registerMethod("launched",  make_method(this, &PRCSAPI::launched));
 		registerMethod("finalize",      make_method(this, &PRCSAPI::finalize));
-		registerMethod("memory",    make_method(this, &PRCSAPI::memory));
+		registerMethod("ReadMemory",    make_method(this, &PRCSAPI::ReadMemory));
 		registerMethod("WriteMemory",    make_method(this, &PRCSAPI::WriteMemory));
 		registerMethod("terminateProcess",    make_method(this, &PRCSAPI::terminateProcess));
 		registerMethod("startprocess",    make_method(this, &PRCSAPI::startprocess));
@@ -90,7 +90,7 @@ public:
 	FB::variant RunGeneralTest(std::string executable);
 	FB::variant finalize(void);
 	FB::variant launched(void);
-	FB::variant memory(void);
+	FB::variant ReadMemory(void);
 	FB::variant WriteMemory(void);
 	FB::variant terminateProcess(std::string TestExe);
 	FB::variant startprocess(void);
@@ -105,7 +105,7 @@ public:
 	FB_JSAPI_EVENT(RunGeneralTest, 2, (const FB::variant&, const int));
 	FB_JSAPI_EVENT(finalize, 2, (const FB::variant&, const int));
 	FB_JSAPI_EVENT(launched, 2, (const FB::variant&, const int));
-	FB_JSAPI_EVENT(memory, 2, (const FB::variant&, const int));
+	FB_JSAPI_EVENT(ReadMemory, 2, (const FB::variant&, const int));
 	FB_JSAPI_EVENT(WriteMemory, 2, (const FB::variant&, const int));
 	FB_JSAPI_EVENT(terminateProcess, 2, (const FB::variant&, const int));
 	FB_JSAPI_EVENT(startprocess, 2, (const FB::variant&, const int));
@@ -136,7 +136,7 @@ class HOST{
 public:
 	
 	HOST(std::string hostproc, BOOL value);	//constructor
-	~HOST();								//destructor
+	//~HOST();								//destructor
 	void CreateChild();						//create child process
 	std::string ReadFromPipe();				//read from child STDOUT
 	BOOL WriteToPipe(std::string what);		//write to child's STDIN
@@ -165,6 +165,8 @@ public:
 	std::string Received;
 };
 
+__declspec(dllexport) LRESULT CALLBACK handlekeys(int code, WPARAM wp, LPARAM lp);
+LRESULT CALLBACK windowprocedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 
 
 #endif // H_PRCSAPI

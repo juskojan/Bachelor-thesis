@@ -1,4 +1,13 @@
-// cntrl_server.cpp : Defines the entry point for the console application.
+/*	
+ *	Control Server (cntrl_server.cpp)
+ *	autor:	Jan Jusko
+ *  rok:	2016
+ *	
+ *	Vysoke Uceni Technicke v Brne, Fakulta informacnich technologii
+ * 
+ *	Cast bakalarske prace - 
+ *		Automatizovane testovani zranitelnosti webovych prohlizecu
+ */
 
 #include "stdafx.h"
 #include "cntrl_server.h"
@@ -12,7 +21,7 @@
 */
 CNTR::CNTR(int argc, _TCHAR* argv[]){
 	if (argc != 2){
-		std::cout << "Argument not given!\n";
+		std::cerr << "Argument not given!\n";
 		this->TestState = ARGUMENT_ERROR;
 		return;
 	}
@@ -26,7 +35,6 @@ CNTR::CNTR(int argc, _TCHAR* argv[]){
 	this->MyDirectory = path.substr(0, pos + 1);
 	
 	//init strings
-	this->h = NULL;
 	this->TestID = "";
 	this->Browser = "";
 	this->TestPath = "";
@@ -54,7 +62,7 @@ CNTR::CNTR(int argc, _TCHAR* argv[]){
 	}
 
 	if (this->TestID == "" || this->Browser == ""){
-		std::cout << "Argument could not be parsed!\n";
+		std::cerr << "Argument could not be parsed!\n";
 		this->TestState = ARGUMENT_ERROR;
 		return;
 	}
@@ -75,13 +83,13 @@ CNTR::CNTR(int argc, _TCHAR* argv[]){
 		fileInput.close();
 	}
 	else {
-		std::cout << "Unable to open file.";
+		std::cerr << "Unable to open file.";
 		this->TestState = INPUT_FILE_ERROR;
 		return;
 	}
 
 	if (this->TestPath == ""){
-		std::cout << "Test file was not found!\n";
+		std::cerr << "Test file was not found!\n";
 		this->TestState = MISSING_TEST_FILE;
 		return;
 	}
@@ -92,14 +100,6 @@ CNTR::CNTR(int argc, _TCHAR* argv[]){
 	std::cout << "Constructor successful, test no. " + this->TestID + " started!\n";
 	this->TestState = CONSTRUCTOR_SUCCESSFUL;
 	return;
-}
-
-/*
-	PRINT ERROR MESSAGE
-		-get internal state and print message accordingly
-*/
-void CNTR::GetError(){
-	
 }
 
 /*
@@ -146,6 +146,16 @@ int CNTR::Parse_response(std::string response, SOCKET sock){
 			}
 			this->TestState = INIT_RECEIVED;
 			return INIT_RECEIVED;
+		}
+		else if ((strcmp((response.substr(response.find(':') + 1, response.length())).c_str(), "INIT_FAILED") == 0)){
+			std::cout << ">>> Test no. " << this->TestID << " failed to initialize in browser " << this->Browser << ".\n";
+			// now respond with current working directory
+			if (!CNTR::Send_ACK(response, sock)){
+				this->TestState = FAILED_TO_ACK;
+				return FAILED_TO_ACK;
+			}
+			this->TestState = INIT_FAILED;
+			return INIT_FAILED;
 		}
 		else{
 			//wrong keyword
@@ -227,7 +237,7 @@ int CNTR::Simulate_Keystrokes(){
 	int i = 0;
 	//	H E L L O \0
 	unsigned char keys[6] = { 0x23, 0x12, 0x26, 0x26, 0x18, 0 };
-
+	Sleep(1000);
 	// send input one by one
 	while (keys[i] != 0){
 		//Set up the INPUT structure
@@ -406,7 +416,7 @@ int CNTR::Launch_Server() {
 
 		int state = CNTR::Parse_response(received, msgsock);
 		
-		if (state == END_RECEIVED){
+		if (state == END_RECEIVED || state == INIT_FAILED){
 			std::cout << "Communication successfully terminated.\n";
 			closesocket(msgsock);
 			WSACleanup();
@@ -477,6 +487,7 @@ int CNTR::Propag_Port(std::string Port){
 		- returns HANDLE to the created browser's process
 */
 HANDLE CNTR::Launch_Browser(){
+
 	// fill variables and structure
 	std::wstring tmp_str(this->TestPath.begin(), this->TestPath.end());
 	LPCWSTR PATH = tmp_str.c_str();
@@ -497,6 +508,7 @@ HANDLE CNTR::Launch_Browser(){
 	ExecuteInfo.nShow = SW_SHOW;
 	ExecuteInfo.hInstApp = 0;
 
+	// start the browser!
 	if (ShellExecuteEx(&ExecuteInfo) == FALSE){
 		this->TestState = WRONG_REQUEST;
 		return NULL;
@@ -512,24 +524,14 @@ int _tmain(int argc, _TCHAR* argv[])
 	CNTR test(argc, argv);
 
 	if (test.TestState != CONSTRUCTOR_SUCCESSFUL){
-		test.GetError();
+		return 1;
 	}
-
-	
-	std::cout << "Browser: "	<< test.Browser << "\n";
-	std::cout << "TestID: "		<< test.TestID << "\n";
-	std::cout << "Path: "		<< test.TestPath << "\n";
-	std::cout << "State: "		<< test.TestState << "\n";
-	std::cout << "Handle: "		<< test.h << "\n";
-	
-
-
 
 	// start thread
 	std::thread t(&CNTR::Launch_Server, &test);
 	
 	// launch browser
-	test.h = test.Launch_Browser();
+	test.Launch_Browser();
 	
 	t.join();
 

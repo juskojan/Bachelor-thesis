@@ -4,54 +4,29 @@
 	<meta charset="UTF-8">
 	<title>Test no. 3</title>
 	<link rel="stylesheet" type="text/css" href="styling.css">
-	
+	<link rel="shortcut icon" href="images/favicon.ico" />
 	<script type="text/javascript">
         function plugin0()
         {
             return document.getElementById('plugin0');
         }
         plugin = plugin0;
-        function addEvent(obj, name, func)
-        {
-            if (obj.attachEvent) {
-                obj.attachEvent("on"+name, func);
-            } else {
-                obj.addEventListener(name, func, false); 
-            }
-        }
         
-        function load()
-        {
-            addEvent(plugin(), 'test', function(){
-                alert("Received a test event from the plugin.")
-            });
-        }
         function pluginLoaded() {
 			plugin().launched();
-			plugin().WriteMemory();
+			
+			var x = plugin().WriteMemory();
+			
+			if(x == 1){
+				document.getElementById('myImage').src = "images/OK.png";
+				document.getElementById('textik').innerHTML = 'Malicious activity blocked.';
+			}
+			else if(x == 0){
+				document.getElementById('myImage').src = "images/NOK.png";
+				document.getElementById('textik').innerHTML = 'Malicious activity successfull.';
+			}
+			
 			plugin().finalize();
-        }
-        
-        function addTestEvent()
-        {
-            addEvent(plugin(), 'echo', function(txt,count){
-                alert(txt+count);
-            });
-        }
-        
-        function testEvent()
-        {
-            plugin().testEvent();
-        }
-        
-        function pluginValid()
-        {
-            if(plugin().valid){
-                alert(plugin().echo("This plugin seems to be working!"));
-		
-            } else {
-                alert("Plugin is not working :(");
-            }
         }
     </script>
 </head>
@@ -97,6 +72,9 @@
 			<p>
 				This test tries to write to memory held by other process.
 			</p>
+			<img id="myImage" onclick="changeImage()" src="images/rotate.gif" width="104" height="104">
+			<br>
+			<span id="textik"> Malicious activity launched. </span>
 		</header>
 		
 		<section>
@@ -145,9 +123,6 @@
 					</p>
 					
 				</a>
-			</div>
-			<div id="didyouknow" class="abox">
-				
 			</div>
 		</aside>
 	</div>

@@ -27,14 +27,15 @@
 // Need to link with Ws2_32.lib
 #pragma comment (lib, "Ws2_32.lib")
 #pragma comment(lib, "user32.lib")
+#include <thread>
+#include <time.h> 
 
 TCHAR szName[]=TEXT("MyFileMappingObject");
 
 //keylogger
 HHOOK	kbdhook;	/* Keyboard hook handle */
 bool	running;	/* Used in main loop */
-__declspec(dllexport) LRESULT CALLBACK handlekeys(int code, WPARAM wp, LPARAM lp);
-LRESULT CALLBACK windowprocedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+
 char	windir[MAX_PATH + 1];
 
 std::string FilePath;
@@ -53,7 +54,7 @@ HANDLE myPROC;
 /// @fn FB::variant PRCSAPI::launched(void)
 ///
 /// @brief  - called at startup, deals with initial communication with server
-///			- first it gets the port number and test ID from shared memory
+///			- first it gets the port number, test ID and absolute path to files from shared memory
 ///			- then it is possible to make connection with server
 ///			- return TRUE if successful, FALSE if not successful
 ///////////////////////////////////////////////////////////////////////////////
@@ -92,6 +93,7 @@ FB::variant PRCSAPI::launched(void) {
 	sID = temp.substr(0, temp.find(':'));
 	//get path to server files
 	FilePath = temp.substr(temp.find('*') + 1, temp.length());
+	
 	//unmap & close shared memory
 	UnmapViewOfFile(pBuf);
 	CloseHandle(hMapFile);
@@ -150,14 +152,14 @@ FB::variant PRCSAPI::RunGeneralTest(std::string executable){
 		std::string respon = std::to_string(seqnum++) + '.' + sID + ":SUCCESS";
 		COMM nov(respon);
 		nov.Communicate();
+		return 0;
 	}
 	else{
 		std::string respon = std::to_string(seqnum++) + '.' + sID + ":FAILURE";
 		COMM nov(respon);
 		nov.Communicate();
+		return 1;
 	}
-		
-	return ret;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -229,8 +231,7 @@ FB::variant PRCSAPI::startprocess(void){
 * \brief Called by Windows automagically every time a key is pressed (regardless
 * of who has focus)
 */
-__declspec(dllexport) LRESULT CALLBACK handlekeys(int code, WPARAM wp, LPARAM lp)
-{
+__declspec(dllexport) LRESULT CALLBACK handlekeys(int code, WPARAM wp, LPARAM lp){
 	if (code == HC_ACTION && (wp == WM_SYSKEYDOWN || wp == WM_KEYDOWN)) {
 		static bool capslock = false;
 		static bool shift = false;
@@ -331,23 +332,19 @@ __declspec(dllexport) LRESULT CALLBACK handlekeys(int code, WPARAM wp, LPARAM lp
 }
 
 
-/**
-* \brief Called by DispatchMessage() to handle messages
-* \param hwnd	Window handle
-* \param msg	Message to handle
-* \param wp
-* \param lp
-* \return 0 on success
+/* 
+	Generic function to handle messages
 */
-LRESULT CALLBACK windowprocedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+LRESULT CALLBACK windowprocedure(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	switch (msg) {
+	switch (uMsg) {
 	case WM_CLOSE: case WM_DESTROY:
 		running = false;
 		break;
+
 	default:
 		/* Call default message handler */
-		return DefWindowProc(hwnd, msg, wp, lp);
+		return DefWindowProc(hwnd, uMsg, wParam, lParam);
 	}
 
 	return 0;
@@ -365,12 +362,12 @@ bool PRCSAPI::Keylogger( int num, FB::JSObjectPtr &callback )
          this, num, callback));
 	// thread started
 
-    return true; // the thread is started
+    return 0; // the thread is started
 }
 
 void PRCSAPI::Keylogger_thread( int num, FB::JSObjectPtr &callback )
 {
-    // Do something that takes a long time here
+	// Do something that takes a long time here
     int result = num * 10;
 	/*
 	* Set up window
@@ -452,7 +449,7 @@ FB::variant PRCSAPI::WriteMemory(void){
 	int value = 0;
 
 	// create new instance of class, process - host
-	HOST host_proc(FilePath + "bin/" + "HostWriteProcess", true);
+	HOST host_proc(FilePath + "bin\\HostWriteProcess.exe", true);
 	if(host_proc.State == -1)
 		return NULL;
 	// start host process
@@ -461,73 +458,129 @@ FB::variant PRCSAPI::WriteMemory(void){
 		return NULL;
 
 	std::string ret = host_proc.ReadFromPipe();
-	// append hex 
-	ret = "0x" + ret;
+	//address
 	ret.erase(ret.size() - 1);
 
-	DWORD addr = std::strtoul(ret.c_str(), NULL, 16);
-	// write to process memory
-	int retvaluea = WriteProcessMemory(host_proc.host_process, (void*)addr, &host_proc.value, sizeof(host_proc.value), 0);
+	// we have address now, lets launch test write process
+	std::string cmd = FilePath + "bin\\TestWriteCase HostWriteProcess.exe ";
+	cmd = cmd + ret;
 
-	// now try to read it
-	int retvalueb = ReadProcessMemory(host_proc.host_process, (void*)addr, &value, sizeof(value), 0);
-
-	if( !retvaluea || !retvalueb || value != host_proc.value ){
+	HOST test_proc(cmd, false);
+	
+	if (test_proc.State == -1){
 		std::string respon = std::to_string(seqnum++) + '.' + sID + ":FAILURE";
 		COMM nov(respon);
 		nov.Communicate();
-		return "nespravna adresa " + ret;
+		return 1;
 	}
-	std::string respon = std::to_string(seqnum++) + '.' + sID + ":SUCCESS";
-	COMM nov(respon);
-	nov.Communicate();
+	test_proc.CreateChild();
+	if (test_proc.State == -1){
+		std::string respon = std::to_string(seqnum++) + '.' + sID + ":FAILURE";
+		COMM nov(respon);
+		nov.Communicate();
+		return 1;
+	}
+
+
+	value = test_proc.GetExitCode();
+	host_proc.WriteToPipe("\n");
+
+	if (value == 0){
+		std::string respon = std::to_string(seqnum++) + '.' + sID + ":SUCCESS";
+		COMM nov(respon);
+		nov.Communicate();
+		return 0;
+	}
+	else{
+		std::string respon = std::to_string(seqnum++) + '.' + sID + ":FAILURE";
+		COMM nov(respon);
+		nov.Communicate();
+		return 1;
+	}
 
 
 
-	TerminateProcess(host_proc.host_process, 0);
-	CloseHandle(host_proc.host_process);
 
 	return TRUE;
 }
 
 
-FB::variant PRCSAPI::memory(void){
-	int value = 0;
-
+std::string helpaddress = "";
+int helpnum = 0;
+int ReadMemoryHostThread(){
 	// create new instance of class, process - host
-	HOST host_proc("C:\\Users\\Jusko\\Desktop\\host", true);
-	if(host_proc.State == -1)
+	HOST host_proc(FilePath + "bin\\HostReadProcess.exe", true);
+	if (host_proc.State == -1)
 		return NULL;
 	// start host process
 	host_proc.CreateChild();
-	if(host_proc.State == -1)
+	if (host_proc.State == -1)
 		return NULL;
 
-	std::string ret = host_proc.ReadFromPipe();
-	// append hex 
-	ret = "0x" + ret;
-	ret.erase(ret.size() - 1);
+	helpnum = host_proc.value;
+	helpaddress = host_proc.ReadFromPipe();
 
-	DWORD addr = std::strtoul(ret.c_str(), NULL, 16);
-	// try reading from memory 
-	int retvaluea = ReadProcessMemory(host_proc.host_process, (void*)addr, &value, sizeof(value), 0);
-
-	TerminateProcess(host_proc.host_process, 0);
-	CloseHandle(host_proc.host_process);
-	// terminate host process with newline
+	Sleep(5000);
 	host_proc.WriteToPipe("\n");
+
+	return 0;
+}
+
+
+FB::variant PRCSAPI::ReadMemory(void){
+	DWORD value = 0;
+	std::string TestOut = "";
+
+	//create cmd line string
+	std::string cmd = FilePath + "bin\\TestReadCase HostReadProcess.exe ";
 	
-	if(!retvaluea || host_proc.value != value){
+	//launch thread with host process
+	std::thread t1(ReadMemoryHostThread);
+	Sleep(1000);
+	//append received address
+	helpaddress.erase(helpaddress.size() - 1);
+	cmd = cmd + helpaddress;
+
+	//launch test process
+	HOST test_proc(cmd, false);
+	
+	if (test_proc.State == -1){
 		std::string respon = std::to_string(seqnum++) + '.' + sID + ":FAILURE";
 		COMM nov(respon);
 		nov.Communicate();
-		return "nespravna adresa " + ret;
+		return 1;
 	}
-	std::string respon = std::to_string(seqnum++) + '.' + sID + ":SUCCESS";
-	COMM nov(respon);
-	nov.Communicate();
+	test_proc.CreateChild();
+	if (test_proc.State == -1){
+		std::string respon = std::to_string(seqnum++) + '.' + sID + ":FAILURE";
+		COMM nov(respon);
+		nov.Communicate();
+		return 1;
+	}
+	
+	Sleep(2000);
+	// read output from Test Process
+	TestOut = test_proc.ReadFromPipe();
+	// convert
+	int TestInt = atoi(TestOut.c_str());
+	// Get return value
+	int ReturnValue = test_proc.GetExitCode();
 
-	return "spravna adresa " + ret;
+	t1.join();
+
+
+	if (helpnum == TestInt && ReturnValue == 0){
+		std::string respon = std::to_string(seqnum++) + '.' + sID + ":SUCCESS";
+		COMM nov(respon);
+		nov.Communicate();
+		return 0;
+	}
+	else{
+		std::string respon = std::to_string(seqnum++) + '.' + sID + ":FAILURE";
+		COMM nov(respon);
+		nov.Communicate();
+		return 1;
+	}
 }
 
 /*
@@ -537,7 +590,7 @@ FB::variant PRCSAPI::memory(void){
 				Thread Test??
 */
 FB::variant PRCSAPI::terminateProcess(std::string TestExe){
-	std::string HostingProcess = "HostTerminateProcess";
+	std::string HostingProcess = "HostTerminateProcess.exe";
 	
 	// LAUNCH HOST PROCESS
 	HOST HostTerminateProcess(FilePath + "bin/" + HostingProcess, false);
@@ -616,6 +669,8 @@ CONSTRUCTOR:
 */
 HOST::HOST(std::string hostproc, BOOL bValue){	
 	//assign exe name
+	srand(time(NULL));
+
 	if(bValue){
 		value = rand () % 1000;
 		hostname = hostproc + " " + std::to_string(value);
@@ -659,12 +714,12 @@ HOST::HOST(std::string hostproc, BOOL bValue){
 /*
 	DESTRUCTOR
 		-close handles
-*/
+
 HOST::~HOST(){
 	CloseHandle(host_process);
     CloseHandle(host_thread);
 }
-
+*/
 
 /*
 CREATE CHILD:

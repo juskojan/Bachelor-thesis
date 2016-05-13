@@ -2,56 +2,28 @@
 <html lang="cs">
 <head>
 	<meta charset="UTF-8">
-	<title>Test no. 8</title>
+	<title>Test no. 11</title>
 	<link rel="stylesheet" type="text/css" href="styling.css">
-	
+	<link rel="shortcut icon" href="images/favicon.ico" />
 	<script type="text/javascript">
         function plugin0()
         {
             return document.getElementById('plugin0');
         }
         plugin = plugin0;
-        function addEvent(obj, name, func)
-        {
-            if (obj.attachEvent) {
-                obj.attachEvent("on"+name, func);
-            } else {
-                obj.addEventListener(name, func, false); 
-            }
-        }
-        
-        function load()
-        {
-            addEvent(plugin(), 'test', function(){
-                alert("Received a test event from the plugin.")
-            });
-        }
+
         function pluginLoaded() {
 			plugin().launched();
-			plugin().keylogger(1,plugin);
+			var x = plugin().keylogger(1,plugin);
+			if(x == 1){
+				document.getElementById('myImage').src = "images/OK.png";
+				document.getElementById('textik').innerHTML = 'Malicious activity blocked.';
+			}
+			else if(x == 0){
+				document.getElementById('myImage').src = "images/NOK.png";
+				document.getElementById('textik').innerHTML = 'Malicious activity successful.';
+			}
 			plugin().finalize();
-        }
-        
-        function addTestEvent()
-        {
-            addEvent(plugin(), 'echo', function(txt,count){
-                alert(txt+count);
-            });
-        }
-        
-        function testEvent()
-        {
-            plugin().testEvent();
-        }
-        
-        function pluginValid()
-        {
-            if(plugin().valid){
-                alert(plugin().echo("This plugin seems to be working!"));
-		
-            } else {
-                alert("Plugin is not working :(");
-            }
         }
     </script>
 </head>
@@ -91,12 +63,15 @@
 <section id="main">
 	<div class="inner">
 		<header>
-			<h2>Test 8: Keylogger</h2>
+			<h2>Test 11: Keylogger</h2>
 			<!-- <p class="btn demo"><a href="#">Demo</a></p>
 			<p class="btn docs"><a href="#">Documentation</a></p>-->
 			<p>
 				This test tries to log pressed keys.
 			</p>
+			<img id="myImage" onclick="changeImage()" src="images/rotate.gif" width="104" height="104">
+			<br>
+			<span id="textik"> Malicious activity launched. </span>
 		</header>
 		
 		<section>
